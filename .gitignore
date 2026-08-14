@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+AGENTS.md 
+agents.md 
+# Local agent instructions
+AGENTS.md
+
+# Local agent instructions
+AGENTS.md
+/refrences.local/
