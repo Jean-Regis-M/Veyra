@@ -1,0 +1,23 @@
+LOCUS       TESTSEQ01              100 bp    DNA     linear   UNK
+DEFINITION  Test sequence for VEYRA unit tests.
+ACCESSION   TESTSEQ01
+VERSION     TESTSEQ01.1
+KEYWORDS    .
+SOURCE      Synthetic construct.
+  ORGANISM  Synthetic construct.
+            .; other sequences; artificial sequences.
+FEATURES             Location/Qualifiers
+     source          1..100
+                     /organism="Synthetic construct"
+                     /mol_type="genomic DNA"
+                     /db_xref="taxon:32630"
+     gene            10..40
+                     /gene="testGene"
+     CDS             10..40
+                     /gene="testGene"
+                     /product="test protein"
+                     /codon_start=1
+ORIGIN
+        1 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+       61 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt ac
+//

@@ -1,0 +1,8 @@
+@read1 test read 1
+ACGTACGTACGT
++
+IIIIIIIIIIII
+@read2 test read 2
+GCTAGCTAGCTA
++
+ABCDEFGHIJKL
