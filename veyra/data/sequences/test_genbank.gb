@@ -1,4 +1,4 @@
-LOCUS       VEYRA_TEST1              200 bp    DNA     linear   UNK
+LOCUS       VEYRA_TEST1              200 bp    DNA     linear   UNK 01-JAN-2024
 DEFINITION  Test CRISPR target sequence for VEYRA validation.
 ACCESSION   VEYRA_TEST1
 VERSION     VEYRA_TEST1.1
