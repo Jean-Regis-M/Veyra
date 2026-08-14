@@ -23,6 +23,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from schemas.genomic_record import GenomicRecord
+from parsers.pam import PAM_DATABASE
 from services.ingestion import IngestionError, ingest_file, get_ingestion_summary
 
 
@@ -58,6 +59,22 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Parse and validate without printing a summary (exit code indicates result).",
     )
+    parser.add_argument(
+        "--pam",
+        action="store_true",
+        default=False,
+        help="Enable PAM (Protospacer Adjacent Motif) scanning for CRISPR analysis.",
+    )
+    parser.add_argument(
+        "--pam-types",
+        nargs="+",
+        default=None,
+        help=(
+            "PAM types to scan for. Default: SpCas9 (NGG). "
+            f"Available: {', '.join(PAM_DATABASE.keys())}. "
+            "Can specify multiple: --pam-types SpCas9 Cas12a"
+        ),
+    )
     return parser
 
 
@@ -87,6 +104,14 @@ def _print_summary(summary: dict) -> None:
         if rec["warnings"]:
             for warn in rec["warnings"]:
                 print(f"        WARN : {warn}")
+        # PAM scan results
+        pam = rec.get("pam_scan")
+        if pam is not None:
+            print(f"      PAM Sites  : {pam['total_sites']} total "
+                  f"({pam['forward_sites']} fwd, {pam['reverse_sites']} rev)")
+            if pam["pam_types"]:
+                for ptype, count in pam["pam_types"].items():
+                    print(f"        {ptype}: {count}")
         print()
     print("=" * 60)
 
@@ -97,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     filepath = args.input
+    pam_scan = args.pam
+    pam_names = args.pam_types
 
     if not os.path.isfile(filepath):
         print(f"Error: file not found – {filepath}", file=sys.stderr)
@@ -104,14 +131,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.json:
-            summary = get_ingestion_summary(filepath)
+            summary = get_ingestion_summary(filepath, pam_scan=pam_scan, pam_names=pam_names)
             if not args.quiet:
                 print(json.dumps(summary, indent=2))
             return 0
 
         if args.validate_only:
             count = 0
-            for record in ingest_file(filepath):
+            for record in ingest_file(filepath, pam_scan=pam_scan, pam_names=pam_names):
                 if not record.validation.is_valid:
                     return 2
                 count += 1
@@ -121,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         # Default: human-readable summary
-        summary = get_ingestion_summary(filepath)
+        summary = get_ingestion_summary(filepath, pam_scan=pam_scan, pam_names=pam_names)
         if not args.quiet:
             _print_summary(summary)
         return 0

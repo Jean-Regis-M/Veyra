@@ -359,6 +359,127 @@ class TestCLI(unittest.TestCase):
             main(["--help"])
         self.assertEqual(ctx.exception.code, 0)
 
+    def test_cli_pam_flag(self):
+        from veyra import main
+
+        path = os.path.join(FIXTURES, "test.fasta")
+        exit_code = main(["--input", path, "--pam", "--quiet"])
+        self.assertEqual(exit_code, 0)
+
+    def test_cli_pam_types_flag(self):
+        from veyra import main
+
+        path = os.path.join(FIXTURES, "test.fasta")
+        exit_code = main(["--input", path, "--pam", "--pam-types", "SpCas9", "Cas12a", "--quiet"])
+        self.assertEqual(exit_code, 0)
+
+
+class TestPAMScanner(unittest.TestCase):
+    """Tests for PAM detection module."""
+
+    def test_scan_pam_spCas9(self):
+        from parsers.pam import scan_pam
+
+        # Sequence with a known NGG PAM site
+        # AGG is at position 2, spacer would be before it
+        seq = "NNNNNNNNNNNNNNNNNNNNAGG"  # 20 N's + AGG
+        result = scan_pam(seq, pam_name="SpCas9")
+        self.assertGreater(result.total_sites, 0)
+        self.assertEqual(result.pam_sites[0].pam_sequence, "AGG")
+        self.assertEqual(result.pam_sites[0].strand, 1)
+
+    def test_scan_pam_reverse_strand(self):
+        from parsers.pam import scan_pam
+
+        # CCN on forward = NGG on reverse strand
+        seq = "CCT"  # reverse complement is AGG
+        result = scan_pam(seq, pam_name="SpCas9")
+        rev_sites = [s for s in result.pam_sites if s.strand == -1]
+        self.assertGreater(len(rev_sites), 0)
+
+    def test_scan_pam_cas12a(self):
+        from parsers.pam import scan_pam
+
+        # Cas12a PAM is TTTV (V = A/C/G) on forward strand, 5' of spacer
+        seq = "TTTACCGGGGGGGGGGGGGGGGGGG"  # TTTAC + 20nt
+        result = scan_pam(seq, pam_name="Cas12a")
+        self.assertGreater(result.total_sites, 0)
+        self.assertEqual(result.pam_sites[0].pam_type, "Cas12a")
+
+    def test_scan_pam_custom_motif(self):
+        from parsers.pam import scan_pam
+
+        result = scan_pam("AAAAAGG", custom_motif="NGG", custom_spacer_len=5)
+        self.assertGreater(result.total_sites, 0)
+
+    def test_scan_pam_empty_sequence(self):
+        from parsers.pam import scan_pam
+
+        result = scan_pam("")
+        self.assertEqual(result.total_sites, 0)
+
+    def test_scan_pam_unknown_type_raises(self):
+        from parsers.pam import scan_pam
+
+        with self.assertRaises(ValueError):
+            scan_pam("ACGT", pam_name="NonExistentCas")
+
+    def test_scan_pam_multi(self):
+        from parsers.pam import scan_pam_multi
+
+        seq = "NNNNNNNNNNNNNNNNNNNNAGGTTTACCGGGGGGGGGGGGGGGGGGG"
+        result = scan_pam_multi(seq, ["SpCas9", "Cas12a"])
+        self.assertGreater(result.total_sites, 0)
+
+    def test_fmindex_threshold(self):
+        from parsers.pam import scan_pam, FM_INDEX_THRESHOLD
+
+        # Build a sequence longer than the threshold to trigger FM-index path
+        # 101kbp sequence with an NGG PAM embedded
+        long_seq = "A" * (FM_INDEX_THRESHOLD + 1000)
+        # Insert AGG PAM at position 50000
+        long_seq = long_seq[:50000] + "AGG" + long_seq[50003:]
+        result = scan_pam(long_seq, pam_name="SpCas9")
+        self.assertGreater(result.total_sites, 0)
+
+    def test_pam_in_genomic_record(self):
+        from parsers.pam import scan_pam
+
+        seq = "NNNNNNNNNNNNNNNNNNNNAGG"
+        pam_result = scan_pam(seq, pam_name="SpCas9")
+        record = GenomicRecord(id="test", sequence=seq, pam_scan=pam_result)
+        summary = record.summary()
+        self.assertIsNotNone(summary["pam_scan"])
+        self.assertGreater(summary["pam_scan"]["total_sites"], 0)
+
+    def test_pam_with_ingestion(self):
+        from services.ingestion import ingest_file
+
+        path = os.path.join(FIXTURES, "test.fasta")
+        records = list(ingest_file(path, pam_scan=True))
+        self.assertEqual(len(records), 3)
+        # All records should have pam_scan populated
+        for rec in records:
+            self.assertIsNotNone(rec.pam_scan)
+
+
+class TestPAMFixtures(unittest.TestCase):
+    """Tests using dedicated PAM test fixtures."""
+
+    def test_pam_fasta_fixture(self):
+        from services.ingestion import ingest_file
+
+        path = os.path.join(FIXTURES, "pam_test.fasta")
+        records = list(ingest_file(path, pam_scan=True, pam_names=["SpCas9"]))
+        self.assertEqual(len(records), 1)
+        rec = records[0]
+        self.assertIsNotNone(rec.pam_scan)
+        # The fixture has known NGG sites
+        self.assertGreater(rec.pam_scan.total_sites, 0)
+        # Check that guide RNA is computed
+        sites_with_guide = [s for s in rec.pam_scan.pam_sites if s.guide_rna is not None]
+        self.assertGreater(len(sites_with_guide), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

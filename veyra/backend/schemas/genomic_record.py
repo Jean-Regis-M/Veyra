@@ -74,6 +74,37 @@ class ValidationResult:
 
 
 @dataclass
+class PAMSite:
+    """A detected PAM (Protospacer Adjacent Motif) site in a sequence.
+
+    PAM sites are short DNA motifs required for CRISPR-Cas9 binding.
+    The PAM is located immediately 3' of the protospacer on the
+    non-target (displaced) strand.  In this representation, positions
+    refer to the forward strand of the input sequence.
+    """
+
+    position: int  # 0-based start position of the PAM on the forward strand
+    pam_sequence: str  # the PAM motif (e.g. "NGG")
+    pam_type: str  # canonical PAM class (e.g. "NGG", "NAG", "NNNNGATT")
+    strand: int  # 1 = forward strand, -1 = reverse complement strand
+    spacer_start: int | None = None  # start of the 20nt spacer (upstream of PAM)
+    spacer_end: int | None = None  # end of the 20nt spacer
+    spacer_sequence: str | None = None  # the 20nt protospacer sequence
+    guide_rna: str | None = None  # 20nt guide RNA (reverse complement of spacer)
+
+
+@dataclass
+class PAMScanResult:
+    """Results of a PAM scan across a genomic sequence."""
+
+    pam_sites: list[PAMSite] = field(default_factory=list)
+    total_sites: int = 0
+    forward_sites: int = 0
+    reverse_sites: int = 0
+    pam_types_found: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class GenomicRecord:
     """Normalized internal representation of a single genomic sequence record.
 
@@ -91,6 +122,7 @@ class GenomicRecord:
     features: list[GenomicFeature] = field(default_factory=list)
     coordinate: GenomicCoordinate | None = None
     quality: QualityData | None = None
+    pam_scan: PAMScanResult | None = None
     provenance: Provenance = field(default_factory=Provenance)
     validation: ValidationResult = field(default_factory=ValidationResult)
 
@@ -100,6 +132,14 @@ class GenomicRecord:
 
     def summary(self) -> dict[str, Any]:
         """Return a concise summary dict suitable for display."""
+        pam_info: dict[str, Any] | None = None
+        if self.pam_scan is not None:
+            pam_info = {
+                "total_sites": self.pam_scan.total_sites,
+                "forward_sites": self.pam_scan.forward_sites,
+                "reverse_sites": self.pam_scan.reverse_sites,
+                "pam_types": self.pam_scan.pam_types_found,
+            }
         return {
             "id": self.id,
             "length": self.length,
@@ -108,6 +148,7 @@ class GenomicRecord:
             "format": self.provenance.input_format.value,
             "features_count": len(self.features),
             "has_quality": self.quality is not None,
+            "pam_scan": pam_info,
             "is_valid": self.validation.is_valid,
             "errors": self.validation.errors,
             "warnings": self.validation.warnings,

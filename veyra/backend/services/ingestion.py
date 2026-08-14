@@ -1,8 +1,7 @@
 """VEYRA ingestion service.
 
-Orchestrates format detection, parsing, validation, and conversion
-into normalized GenomicRecord instances.  This is the main entry point
-for the ingestion pipeline.
+Orchestrates format detection, parsing, validation, PAM scanning,
+and conversion into normalized GenomicRecord instances.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ from parsers.detector import detect_format, FormatDetectionError
 from parsers.fasta_parser import parse as parse_fasta
 from parsers.fastq_parser import parse as parse_fastq
 from parsers.genbank_parser import parse as parse_genbank
+from parsers.pam import scan_pam, scan_pam_multi, PAM_DATABASE
 from schemas.genomic_record import GenomicRecord, VEYRAFormat
 from utils.validation import validate_record
 
@@ -22,11 +22,19 @@ class IngestionError(Exception):
     """Raised when ingestion fails due to format or parsing issues."""
 
 
-def ingest_file(filepath: str) -> Iterator[GenomicRecord]:
+def ingest_file(
+    filepath: str,
+    *,
+    pam_scan: bool = False,
+    pam_names: list[str] | None = None,
+) -> Iterator[GenomicRecord]:
     """Detect format, parse, validate, and yield normalized GenomicRecords.
 
     Args:
         filepath: Path to an input genomic file.
+        pam_scan: If True, run PAM detection on each record's sequence.
+        pam_names: List of PAM types to scan for (default: ["SpCas9"]).
+                   Only used when pam_scan is True.
 
     Yields:
         Validated GenomicRecord instances.
@@ -62,6 +70,13 @@ def ingest_file(filepath: str) -> Iterator[GenomicRecord]:
     try:
         for record in parser(filepath):
             validated = validate_record(record)
+
+            if pam_scan and validated.sequence:
+                if pam_names:
+                    validated.pam_scan = scan_pam_multi(validated.sequence, pam_names)
+                else:
+                    validated.pam_scan = scan_pam(validated.sequence)
+
             yield validated
     except ValueError as exc:
         raise IngestionError(f"Parsing error for {filepath}: {exc}") from exc
@@ -69,12 +84,17 @@ def ingest_file(filepath: str) -> Iterator[GenomicRecord]:
         raise IngestionError(f"I/O error reading {filepath}: {exc}") from exc
 
 
-def ingest_file_list(filepath: str) -> list[GenomicRecord]:
+def ingest_file_list(filepath: str, **kwargs) -> list[GenomicRecord]:
     """Ingest a file and return all records as a list (convenience wrapper)."""
-    return list(ingest_file(filepath))
+    return list(ingest_file(filepath, **kwargs))
 
 
-def get_ingestion_summary(filepath: str) -> dict:
+def get_ingestion_summary(
+    filepath: str,
+    *,
+    pam_scan: bool = False,
+    pam_names: list[str] | None = None,
+) -> dict:
     """Ingest a file and return a concise summary dict.
 
     Useful for CLI output – avoids loading huge sequences into memory
@@ -82,7 +102,7 @@ def get_ingestion_summary(filepath: str) -> dict:
     """
     records: list[GenomicRecord] = []
     total_bases = 0
-    for record in ingest_file(filepath):
+    for record in ingest_file(filepath, pam_scan=pam_scan, pam_names=pam_names):
         records.append(record)
         total_bases += record.length
 
