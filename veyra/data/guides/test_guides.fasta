@@ -1,0 +1,10 @@
+>guide1_SpCas9_target_chr1 AGG PAM downstream
+ATCGATCGATCGATCGATCG
+>guide2_SpCas9_target_chr1_reverse GGG PAM downstream
+GCTAGCTAGCTAGCTAGCTA
+>guide3_SpCas9_target_chr2 AGG PAM downstream
+TTTTAAAACCCCGGGGTTTT
+>guide4_no_PAM_match AAATTT not a real PAM
+CCCCCCCCCCCCCCCCCCCC
+>guide5_Cas12a_target TTTV PAM upstream
+ATCGATCGATCGATCGATCG

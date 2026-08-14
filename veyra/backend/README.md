@@ -1,141 +1,146 @@
-# VEYRA Backend – Genomic Intelligence Ingestion Module
+# VEYRA Backend — Genomic Intelligence Backend
 
-VEYRA (Genomic Intelligence Backend) accepts genomic files from NCBI and other sources, parses them into a normalized internal representation, and provides structured output for downstream analysis modules.
+VEYRA is a modular genomic intelligence backend providing ingestion, PAM scanning, and CRISPR off-target analysis via an MCP tool layer.
 
-**Status:** Initial ingestion/parsing foundation (v0.1).
+**Status:** Working baseline — ingestion + PAM scanning + MCP analysis layer (v0.2).
+
+## Architecture
+
+```
+FASTA / FASTQ / GenBank
+        │
+        ▼
+    Biopython
+        │
+        ▼
+  normalized GenomicRecord
+        │
+        ▼
+      PAM scan
+        │
+        ▼
+    MCP tool layer
+    ├── pam_scan                  (Tier 1 — cheap)
+    ├── pam_scan_region           (Tier 1 — cheap)
+    ├── build_offtarget_index     (Tier 2 — expensive)
+    ├── offtarget_search          (Tier 2 — expensive)
+    ├── score_offtargets          (Tier 2 — moderate)
+    └── rank_candidates           (Tier 2 — moderate)
+```
+
+The downstream VEYRA reasoning/scoring/model layer is still being developed.
 
 ## Project Structure
 
 ```
 veyra/backend/
-├── veyra.py              # CLI entry point
-├── requirements.txt      # Pinned dependencies
-├── README.md
+├── veyra.py                 # CLI entry point
+├── requirements.txt
+├── parsers/
+│   ├── detector.py          # Format detection
+│   ├── fasta_parser.py      # Biopython FASTA
+│   ├── fastq_parser.py      # Biopython FASTQ
+│   ├── genbank_parser.py    # Biopython GenBank
+│   └── pam.py               # PAM scanning (regex + FM-index)
+├── schemas/
+│   └── genomic_record.py    # GenomicRecord dataclass
+├── services/
+│   └── ingestion.py         # Orchestration pipeline
+├── mcp/
+│   ├── schemas.py           # PAMSiteRow, ToolResult
+│   ├── server.py            # MCP tool registry + CLI
+│   └── tools/
+│       ├── pam_scan.py
+│       ├── pam_scan_region.py
+│       ├── build_offtarget_index.py
+│       ├── offtarget_search.py
+│       ├── score_offtargets.py
+│       └── rank_candidates.py
+├── references/
+│   └── __init__.py          # Genome registry
+├── cache/
+│   └── __init__.py          # SQLite cache layer
 ├── doc/
 │   ├── architecture.md
-│   ├── input_formats.md
 │   ├── data_model.md
-│   └── development.md
-├── parsers/
-│   ├── __init__.py       # Parser exports
-│   ├── detector.py       # Format detection (extension + content)
-│   ├── fasta_parser.py   # Biopython FASTA parser
-│   ├── fastq_parser.py   # Biopython FASTQ parser
-│   └── genbank_parser.py # Biopython GenBank parser
-├── schemas/
-│   ├── __init__.py
-│   └── genomic_record.py # Normalized data model (dataclasses)
-├── services/
-│   ├── __init__.py
-│   └── ingestion.py      # Orchestration: detect → parse → validate
-├── utils/
-│   ├── __init__.py
-│   └── validation.py     # Record validation utilities
+│   ├── input_formats.md
+│   ├── development.md
+│   ├── mcp_tools.md
+│   ├── reference_genomes.md
+│   ├── off_target_search.md
+│   └── caching.md
 └── tests/
-    ├── __init__.py
-    ├── test_ingestion.py  # Unit + integration tests
+    ├── test_ingestion.py    # 60 tests
+    ├── test_mcp.py          # 52 tests
     └── fixtures/
-        ├── test.fasta
-        ├── test.fastq
-        ├── test.gb
-        ├── multi.fasta
-        ├── multi.fastq
-        ├── empty.fasta
-        └── malformed.fasta
 ```
 
 ## Installation
 
 ```bash
-# From the veyra/backend directory
+cd /home/hrirake/Desktop/hck15/veyra/backend
 pip install -r requirements.txt
 ```
 
-Requires Python 3.10+ and Biopython 1.83.
+Requires Python 3.10+, Biopython 1.83, numpy 1.26+.
+
+System tools (for MCP tier-2 operations): `bwa`, `samtools`.
 
 ## CLI Usage
 
+### Ingestion
+
 ```bash
-# Human-readable summary (default)
 python veyra.py --input /path/to/file.fasta
-
-# JSON output
 python veyra.py --input /path/to/file.fastq --json
-
-# Validate only (exit code)
-python veyra.py --input /path/to/file.gb --validate-only
-
-# Quiet mode (suppress output)
-python veyra.py --input /path/to/file.fasta --json --quiet
-
-# Help
-python veyra.py --help
+python veyra.py --input /path/to/file.gb --pam
 ```
 
-## Supported Input Formats
+### MCP Server
 
-| Format   | Extensions                          | Notes                     |
-|----------|-------------------------------------|---------------------------|
-| FASTA    | `.fa`, `.fasta`, `.fna`, `.faa`     | Single/multi-record       |
-| FASTQ    | `.fq`, `.fastq`                     | With Phred quality scores |
-| GenBank  | `.gb`, `.gbk`, `.gbff`             | Features, annotations     |
+```bash
+python -m mcp.server list                           # list all tools
+python -m mcp.server pam-scan --sequence ATCGATCGATCGATCGATCGAGG
+python -m mcp.server pam-scan-region --genome GRCh38.p14 --chrom chr1 --start 1000000 --end 1001000
+python -m mcp.server build-index --genome GRCh38.p14 --force
+python -m mcp.server offtarget-search --spacer ATCGATCGATCGATCGATCGAGG --genome GRCh38.p14
+```
 
-Format detection uses file extension as a hint, then confirms by inspecting file content headers.
+## MCP Tools
 
-## Normalized Data Representation
+| Tool | Tier | Cost | Description |
+|------|------|------|-------------|
+| `pam_scan` | 1 | cheap | PAM scanning on input sequence |
+| `pam_scan_region` | 1 | cheap | PAM scanning on genomic region |
+| `build_offtarget_index` | 2 | expensive | BWA index creation (cached) |
+| `offtarget_search` | 2 | expensive | Mismatch-tolerant off-target search |
+| `score_offtargets` | 2 | moderate | CFD specificity scoring |
+| `rank_candidates` | 2 | moderate | Candidate guide ranking |
 
-All parsed data is converted to `GenomicRecord` dataclass instances containing:
-
-- `id` – sequence/record identifier
-- `sequence` – nucleotide sequence (uppercased)
-- `length` – sequence length in bases
-- `description` – full header/description text
-- `accession` – accession number where available
-- `annotations` – key-value metadata (GenBank)
-- `features` – list of `GenomicFeature` (gene, CDS, source, etc.)
-- `coordinate` – `GenomicCoordinate` (start, end, strand, scaffold)
-- `quality` – `QualityData` for FASTQ (Phred scores, mean/min/max)
-- `provenance` – source filename, format, parser name/version
-- `validation` – validation status, errors, warnings
-
-## Error Handling
-
-VEYRA produces structured errors for:
-
-- Missing input files
-- Unsupported/undetectable formats
-- Empty files
-- Malformed FASTA/FASTQ/GenBank
-- Missing required sequence data
-
-Errors are reported as `IngestionError` with clear messages rather than raw tracebacks.
-
-## Extension Points
-
-The architecture is designed for future modules:
-
-1. **New parsers** – Add files to `parsers/` and register in `services/ingestion.py`
-2. **Downstream tools** – Consume `GenomicRecord` lists in new service modules
-3. **BLAST/CRISPOR/CCLMoff** – Wrap as services that accept GenomicRecord
-4. **Reasoning layer** – Model-agnostic; no hard dependencies on specific AI/ML
-5. **MCP tools / Featherless APIs** – Add as separate integration modules
+See `doc/mcp_tools.md` for full tool reference.
 
 ## Testing
 
 ```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Or with unittest
-python -m unittest discover tests/ -v
+python -m pytest tests/ -v       # full suite
+python -m pytest tests/ -q       # quick summary
 ```
 
-## Architecture
+## Supported Input Formats
 
-See `doc/architecture.md` for the full ingestion pipeline diagram.
+| Format | Extensions |
+|--------|-----------|
+| FASTA | `.fa`, `.fasta`, `.fna`, `.faa` |
+| FASTQ | `.fq`, `.fastq` |
+| GenBank | `.gb`, `.gbk`, `.gbff` |
 
-See `doc/data_model.md` for the normalized data model specification.
+## Documentation
 
-See `doc/input_formats.md` for supported format details.
-
-See `doc/development.md` for development and contribution guidelines.
+- `doc/architecture.md` — pipeline diagram
+- `doc/data_model.md` — GenomicRecord specification
+- `doc/input_formats.md` — format details
+- `doc/development.md` — development guide
+- `doc/mcp_tools.md` — MCP tool reference
+- `doc/reference_genomes.md` — genome registry
+- `doc/off_target_search.md` — BWA search methodology
+- `doc/caching.md` — cache architecture

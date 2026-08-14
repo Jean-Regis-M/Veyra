@@ -522,5 +522,74 @@ class TestMCPServer(unittest.TestCase):
         self.assertEqual(len(TOOL_REGISTRY), 6)
 
 
+# =====================================================================
+# End-to-end regression test
+# =====================================================================
+
+class TestE2EPipeline(unittest.TestCase):
+    """End-to-end regression test: pam_scan → build_index → offtarget_search → score → rank."""
+
+    def test_full_pipeline(self):
+        """Exercise the complete MCP pipeline on a small test genome."""
+        from references import GenomeConfig, register_genome
+
+        test_fa = os.path.join(FIXTURES, "test_genome.fa")
+        if not os.path.isfile(test_fa):
+            self.skipTest("test_genome.fa not found")
+
+        config = GenomeConfig(
+            genome_id="e2e_test_genome",
+            display_name="E2E regression test genome",
+            fasta_path=test_fa,
+        )
+        register_genome(config)
+
+        # Step 1: PAM scan a spacer+PAM sequence
+        spacer = "ATCGATCGATCGATCGATCG"
+        pam_seq = "AGG"
+        scan_result = pam_scan(spacer + pam_seq, chrom="chr1")
+        self.assertEqual(scan_result.tool, "pam_scan")
+        self.assertGreater(scan_result.summary["total_sites"], 0,
+                           "PAM scan should find at least one NGG site")
+
+        # Step 2: Build off-target index (force rebuild to ensure clean state)
+        from cache import make_cache_key, cache_invalidate
+        ck = make_cache_key("build_offtarget_index", genome_id="e2e_test_genome",
+                            cas_variant="SpCas9", checksum=config.fasta_checksum())
+        cache_invalidate(ck)
+
+        idx_result = build_offtarget_index("e2e_test_genome", force_rebuild=True)
+        self.assertIn("index_path", idx_result.summary,
+                      f"Index build failed: {idx_result.errors}")
+        self.assertEqual(idx_result.summary["status"], "built")
+
+        # Step 3: Off-target search
+        search_result = offtarget_search(spacer + pam_seq, "e2e_test_genome", max_mismatches=3)
+        self.assertEqual(search_result.tool, "offtarget_search")
+        self.assertIn("total_candidates", search_result.summary)
+
+        # Step 4: Score off-targets (correct arg order: spacer, candidates, pam)
+        if search_result.rows:
+            score_result = score_offtargets(spacer + pam_seq, search_result.rows, "NGG")
+            self.assertEqual(score_result.tool, "score_offtargets")
+            self.assertIn("total_scored", score_result.summary)
+
+            # Step 5: Rank candidates
+            rank_result = rank_candidates(scan_result.rows, score_result.rows)
+            self.assertEqual(rank_result.tool, "rank_candidates")
+            self.assertIn("total_candidates", rank_result.summary)
+        else:
+            # No candidates found — skip scoring/ranking
+            # This is valid for a tiny test genome
+            score_result = None
+            rank_result = None
+
+        # Verify all tools returned without errors
+        for result in [scan_result, idx_result, search_result, score_result, rank_result]:
+            if result is not None:
+                self.assertEqual(result.errors, [],
+                                 f"{result.tool} returned errors: {result.errors}")
+
+
 if __name__ == "__main__":
     unittest.main()

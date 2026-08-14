@@ -139,22 +139,28 @@ def cache_clear(tool_name: str | None = None) -> int:
 
 
 def _remove_artifacts(row: sqlite3.Row) -> None:
-    """Remove cached index files from disk."""
+    """Remove cached index files from disk.
+
+    Only removes BWA/samtools index artifacts, NOT the source FASTA file.
+    """
     index_path = row["index_path"]
     if not index_path:
         return
-    # Remove the index and its associated files
     base = Path(index_path)
     if base.is_dir():
         import shutil
         shutil.rmtree(base, ignore_errors=True)
     else:
-        # Remove all files with this prefix
+        # BWA index artifact extensions to remove
+        _INDEX_EXTS = {
+            ".bwt", ".pac", ".ann", ".amb", ".fai",
+            ".sa", ".rbwt", ".rpac", ".rical",
+        }
         parent = base.parent
         prefix = base.name
         if parent.is_dir():
             for f in parent.iterdir():
-                if f.name.startswith(prefix):
+                if f.name.startswith(prefix) and f.suffix in _INDEX_EXTS:
                     f.unlink(missing_ok=True)
 
 
