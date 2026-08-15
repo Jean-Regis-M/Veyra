@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import sys
 import os
+import contextlib
+import io
+import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -156,7 +159,7 @@ def _check_rule_set_3() -> ModelInfo:
         resource_path="rs3 package (PyPI)",
         expected_context_length=30,
         expected_spacer_length=20,
-        output_scale="0-1",
+        output_scale="native RS3 activity score (not bounded to 0-1)",
         license="MIT",
         provenance="https://github.com/gpp-rnd/rs3",
         dependencies={"rs3": "0.0.15", "lightgbm": "compatible version required"},
@@ -183,9 +186,20 @@ def _check_rule_set_3() -> ModelInfo:
 
         # Try to run reference case
         try:
-            from rs3.seq import predict_seq
+            from rs3.seq import featurize_context, load_seq_model
             test_seq = "AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA"
-            score = predict_seq([test_seq], sequence_tracr="Hsu2013")
+            # Third-party feature code may emit progress bars.  Registry
+            # discovery is used by JSON-producing interfaces, so keep that
+            # diagnostic output out of stdout.
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                model_obj = load_seq_model()
+                if getattr(model_obj, "_n_classes", None) is None:
+                    model_obj._n_classes = 0
+                score = float(model_obj.predict(
+                    featurize_context([test_seq], sequence_tracr="Hsu2013", n_jobs=1)
+                )[0])
+                if not math.isfinite(score):
+                    raise ValueError("rs3 returned a non-finite score")
 
             model.verified = True
             model.availability = "verified"
