@@ -166,9 +166,10 @@ class TestToolsInterfaceParity(unittest.TestCase):
         """Test Python API tools list via MCP server."""
         from mcp.server import TOOL_REGISTRY
 
-        self.assertEqual(len(TOOL_REGISTRY), 6)
+        self.assertEqual(len(TOOL_REGISTRY), 7)
         self.assertIn("pam_scan", TOOL_REGISTRY)
         self.assertIn("offtarget_search", TOOL_REGISTRY)
+        self.assertIn("compute_gc_content", TOOL_REGISTRY)
 
     def test_cli_tools_list(self):
         """Test CLI tools list."""
@@ -186,7 +187,7 @@ class TestToolsInterfaceParity(unittest.TestCase):
         response = client.get("/tools")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["total_tools"], 6)
+        self.assertEqual(data["total_tools"], 7)
 
 
 class TestCLIOutputFormats(unittest.TestCase):
@@ -340,6 +341,92 @@ class TestCanonicalSchemas(unittest.TestCase):
         text = result.to_text()
         self.assertIn("Tool: test", text)
         self.assertIn("total: 1", text)
+
+
+class TestGCContentInterfaceParity(unittest.TestCase):
+    """Test that GC content produces equivalent results across all interfaces."""
+
+    SEQUENCE = "GCGCGCGCGCAAAAAAAAAA"  # 10 GC + 10 AT = 0.5
+
+    def test_python_api_gc_content(self):
+        """Test Python API GC content."""
+        from api import compute_gc_content
+
+        result = compute_gc_content(self.SEQUENCE)
+        self.assertEqual(result.tool, "compute_gc_content")
+        self.assertEqual(result.summary["gc_content"], 0.5)
+        self.assertTrue(result.summary["passes_basic_filter"])
+
+    def test_core_service_gc_content(self):
+        """Test core service GC content."""
+        from core.gc import compute_gc_content
+        from schemas.canonical import ComputeGCContentRequest
+
+        request = ComputeGCContentRequest(sequence=self.SEQUENCE)
+        result = compute_gc_content(request)
+        self.assertEqual(result.tool, "compute_gc_content")
+        self.assertEqual(result.summary["gc_content"], 0.5)
+
+    def test_cli_gc_content(self):
+        """Test CLI GC content."""
+        from cli.main import main
+
+        exit_code = main([
+            "sequence", "gc",
+            "--sequence", self.SEQUENCE,
+            "--output-format", "json",
+        ])
+        self.assertEqual(exit_code, 0)
+
+    def test_http_api_gc_content(self):
+        """Test HTTP API GC content."""
+        from http_api.app import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.post("/sequence/gc", json={
+            "sequence": self.SEQUENCE,
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool"], "compute_gc_content")
+        self.assertEqual(data["summary"]["gc_content"], 0.5)
+
+    def test_mcp_gc_content(self):
+        """Test MCP GC content."""
+        from mcp.tools.compute_gc_content import compute_gc_content
+
+        result = compute_gc_content(self.SEQUENCE)
+        self.assertEqual(result.tool, "compute_gc_content")
+        self.assertEqual(result.summary["gc_content"], 0.5)
+
+    def test_all_interfaces_produce_same_gc(self):
+        """Verify all interfaces produce equivalent GC results."""
+        from api import compute_gc_content
+        from core.gc import compute_gc_content as core_gc
+        from schemas.canonical import ComputeGCContentRequest
+        from mcp.tools.compute_gc_content import compute_gc_content as mcp_gc
+        from http_api.app import app
+        from fastapi.testclient import TestClient
+
+        # Python API
+        api_result = compute_gc_content(self.SEQUENCE)
+
+        # Core service
+        core_result = core_gc(ComputeGCContentRequest(sequence=self.SEQUENCE))
+
+        # MCP
+        mcp_result = mcp_gc(self.SEQUENCE)
+
+        # HTTP API
+        client = TestClient(app)
+        http_response = client.post("/sequence/gc", json={"sequence": self.SEQUENCE})
+        http_data = http_response.json()
+
+        # All should have the same GC content
+        self.assertEqual(api_result.summary["gc_content"], core_result.summary["gc_content"])
+        self.assertEqual(api_result.summary["gc_content"], mcp_result.summary["gc_content"])
+        self.assertEqual(api_result.summary["gc_content"], http_data["summary"]["gc_content"])
 
 
 if __name__ == "__main__":

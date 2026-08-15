@@ -97,12 +97,12 @@ PAM extraction uses `samtools faidx` on a 3nt window adjacent to the aligned rea
 
 After `offtarget_search`, candidates should be:
 
-1. **Scored** with `score_offtargets(spacer, candidates, pam)` — adds CFD scores
+1. **Scored** with `score_offtargets(spacer, candidates, pam)` — adds CFD scores (see [cfd_scoring.md](cfd_scoring.md))
 2. **Ranked** with `rank_candidates(guides, off_targets)` — aggregates evidence
 
 ## Provenance
 
 - Alignment: BWA (bwa aln + bwa samse)
 - PAM extraction: samtools faidx
-- CFD scoring: CRISPOR pickle resources (Doench et al. 2016)
+- CFD scoring: CRISPOR pickle resources (Doench et al. 2016) — see [cfd_scoring.md](cfd_scoring.md)
 - All tool outputs include metadata indicating the source tool and version

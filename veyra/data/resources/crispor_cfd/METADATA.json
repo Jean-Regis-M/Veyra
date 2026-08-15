@@ -1,0 +1,25 @@
+{
+  "source": "CRISPOR CFD (Doench et al. 2016)",
+  "repository": "https://github.com/maximilianh/crisporWebsite",
+  "directory": "CFD_Scoring/",
+  "files": {
+    "mismatch_score.pkl": "Mismatch penalty matrix (240 entries). Key format: r<RNA_wt>:d<DNA_RC_off>,<position>.",
+    "pam_scores.pkl": "PAM score matrix (16 dinucleotide entries). GG=1.0 for SpCas9 NGG.",
+    "cfd-score-calculator.py": "Upstream Python 2 calculator (reference only, not used by VEYRA)."
+  },
+  "checksums": {
+    "mismatch_score.pkl": "sha256:c58e9c1a85f01e423c35fd02aa5a27a23ab27e95c2e98abdcfc71cf4b2667f4b",
+    "pam_scores.pkl": "sha256:ae486444a9135e3acc1f1b9a3973f1069e84efe7a1738a87d10d523bfb46b37e"
+  },
+  "copied_from": "refrences.local/data/benchmarks/crisporPaper/CFD_Scoring/",
+  "copy_date": "2026-08-15",
+  "algorithm": {
+    "description": "CFD = product of position-specific mismatch penalties * PAM score",
+    "rna_conversion": "T→U before scoring (RNA convention)",
+    "mismatch_key": "r<wt_rna_base>:d<revcom(off_dna_base)>,<1-based_position>",
+    "pam_score": "Last 2 nt of off-target sequence",
+    "score_range": "[0, 1]. Higher = more likely to be cut (more concerning off-target).",
+    "unknown_mismatch_default": 0.5
+  },
+  "license": "CRISPOR licensing terms apply. See https://crispor.tefor.net/"
+}

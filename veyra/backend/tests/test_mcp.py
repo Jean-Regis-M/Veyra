@@ -24,6 +24,7 @@ from mcp.tools.build_offtarget_index import build_offtarget_index
 from mcp.tools.offtarget_search import offtarget_search
 from mcp.tools.score_offtargets import score_offtargets, calc_cfd
 from mcp.tools.rank_candidates import rank_candidates
+from mcp.tools.compute_gc_content import compute_gc_content
 from references import get_genome, list_genomes, get_cfd_resources
 from cache import make_cache_key, cache_get, cache_set, cache_clear, cache_invalidate, get_cache_stats
 
@@ -519,7 +520,186 @@ class TestMCPServer(unittest.TestCase):
         self.assertIn("offtarget_search", TOOL_REGISTRY)
         self.assertIn("score_offtargets", TOOL_REGISTRY)
         self.assertIn("rank_candidates", TOOL_REGISTRY)
-        self.assertEqual(len(TOOL_REGISTRY), 6)
+        self.assertIn("compute_gc_content", TOOL_REGISTRY)
+        self.assertEqual(len(TOOL_REGISTRY), 7)
+
+
+# =====================================================================
+# compute_gc_content tests
+# =====================================================================
+
+class TestComputeGCContent(unittest.TestCase):
+    """Tests for the compute_gc_content MCP tool."""
+
+    def test_0_percent_gc(self):
+        """All A/T should give GC=0."""
+        result = compute_gc_content("AAAAAAAAAA")
+        self.assertEqual(result.summary["gc_content"], 0.0)
+
+    def test_100_percent_gc(self):
+        """All G/C should give GC=1.0."""
+        result = compute_gc_content("GCGCGCGCGC")
+        self.assertEqual(result.summary["gc_content"], 1.0)
+
+    def test_50_percent_gc(self):
+        """Equal G/C and A/T should give GC=0.5."""
+        result = compute_gc_content("ACGTACGTACGTACGTACGT")
+        self.assertEqual(result.summary["gc_content"], 0.5)
+
+    def test_mixed_sequence(self):
+        """Test mixed sequence GC calculation."""
+        # GGCC = 4 GC out of 4 = 1.0
+        # AATT = 0 GC out of 4 = 0.0
+        # Combined: 4/8 = 0.5
+        result = compute_gc_content("GGCCAATT")
+        self.assertEqual(result.summary["gc_content"], 0.5)
+
+    def test_even_length_half_split(self):
+        """Even length sequence splits evenly."""
+        # ACGTACGT = 8 nt, split at 4
+        # 5': ACGT -> 2 GC = 0.5
+        # 3': ACGT -> 2 GC = 0.5
+        result = compute_gc_content("ACGTACGT")
+        self.assertEqual(result.summary["gc_5prime"], 0.5)
+        self.assertEqual(result.summary["gc_3prime"], 0.5)
+
+    def test_odd_length_half_split(self):
+        """Odd length sequence splits with floor."""
+        # ACGCG = 5 nt, split at floor(5*0.5)=2
+        # 5': AC -> 1/2 = 0.5
+        # 3': GCG -> 3/3 = 1.0
+        result = compute_gc_content("ACGCG")
+        self.assertEqual(result.summary["gc_5prime"], 0.5)
+        self.assertEqual(result.summary["gc_3prime"], 1.0)
+
+    def test_split_ratio_default(self):
+        """Default split ratio (0.5) divides at midpoint."""
+        seq = "A" * 10 + "G" * 10  # 20 nt
+        result = compute_gc_content(seq, gc_split_ratio=0.5)
+        # Split at floor(20*0.5) = 10
+        # 5': 10 A's = 0.0
+        # 3': 10 G's = 1.0
+        self.assertEqual(result.summary["gc_5prime"], 0.0)
+        self.assertEqual(result.summary["gc_3prime"], 1.0)
+
+    def test_non_midpoint_split_ratio(self):
+        """Non-midpoint split ratio."""
+        seq = "A" * 10 + "G" * 10  # 20 nt
+        result = compute_gc_content(seq, gc_split_ratio=0.3)
+        # Split at floor(20*0.3) = 6
+        # 5': 6 A's = 0.0
+        # 3': 4 A's + 10 G's = 10/14 ≈ 0.714
+        self.assertEqual(result.summary["gc_5prime"], 0.0)
+        self.assertAlmostEqual(result.summary["gc_3prime"], 10/14, places=3)
+
+    def test_sliding_window(self):
+        """Test sliding window GC calculation."""
+        # ACGTACGT = 8 nt, window=4
+        result = compute_gc_content("ACGTACGT", gc_window_size=4)
+        windows = result.summary["sliding_windows"]
+        self.assertEqual(len(windows), 5)  # 8-4+1 = 5 windows
+        # Window 0: ACGT -> 2/4 = 0.5
+        self.assertEqual(windows[0]["start"], 0)
+        self.assertEqual(windows[0]["end"], 4)
+        self.assertEqual(windows[0]["gc"], 0.5)
+        # Window 1: CGTA -> 2/4 = 0.5
+        self.assertEqual(windows[1]["gc"], 0.5)
+
+    def test_sliding_window_different_sizes(self):
+        """Test different window sizes."""
+        seq = "GCGCGCGCGC"  # 10 nt, all GC
+        result = compute_gc_content(seq, gc_window_size=3)
+        windows = result.summary["sliding_windows"]
+        self.assertEqual(len(windows), 8)  # 10-3+1
+        for w in windows:
+            self.assertEqual(w["gc"], 1.0)
+
+    def test_sliding_window_disabled(self):
+        """Test that sliding window can be disabled."""
+        result = compute_gc_content("ACGTACGT", include_sliding_window=False)
+        self.assertEqual(result.summary["sliding_windows"], [])
+
+    def test_half_split_disabled(self):
+        """Test that half split can be disabled."""
+        result = compute_gc_content("ACGTACGT", include_half_split=False)
+        self.assertIsNone(result.summary["gc_5prime"])
+        self.assertIsNone(result.summary["gc_3prime"])
+
+    def test_threshold_pass(self):
+        """Test threshold pass."""
+        result = compute_gc_content("ACGTACGTACGTACGT", gc_min_threshold=0.3, gc_max_threshold=0.7)
+        self.assertTrue(result.summary["passes_basic_filter"])
+
+    def test_threshold_fail_low(self):
+        """Test threshold fail (below min)."""
+        result = compute_gc_content("AAAAAAAAAA", gc_min_threshold=0.3, gc_max_threshold=0.7)
+        self.assertFalse(result.summary["passes_basic_filter"])
+
+    def test_threshold_fail_high(self):
+        """Test threshold fail (above max)."""
+        result = compute_gc_content("GCGCGCGCGC", gc_min_threshold=0.3, gc_max_threshold=0.7)
+        self.assertFalse(result.summary["passes_basic_filter"])
+
+    def test_threshold_boundary_equality(self):
+        """Test threshold boundary equality."""
+        # GC = 0.5 exactly
+        result = compute_gc_content("ACGTACGT", gc_min_threshold=0.5, gc_max_threshold=0.5)
+        self.assertTrue(result.summary["passes_basic_filter"])
+
+    def test_invalid_empty_sequence(self):
+        """Test empty sequence returns error."""
+        result = compute_gc_content("")
+        self.assertGreater(len(result.errors), 0)
+
+    def test_invalid_window_size(self):
+        """Test invalid window size returns error."""
+        result = compute_gc_content("ACGT", gc_window_size=0)
+        self.assertGreater(len(result.errors), 0)
+
+    def test_window_size_exceeds_sequence(self):
+        """Test window size > sequence length warns."""
+        result = compute_gc_content("ACGT", gc_window_size=10)
+        self.assertEqual(result.summary["gc_content"], 0.5)
+        self.assertEqual(result.summary["sliding_windows"], [])
+        self.assertGreater(len(result.warnings), 0)
+
+    def test_invalid_split_ratio(self):
+        """Test invalid split ratio returns error."""
+        result = compute_gc_content("ACGT", gc_split_ratio=1.5)
+        self.assertGreater(len(result.errors), 0)
+
+    def test_invalid_threshold_ordering(self):
+        """Test min > max threshold returns error."""
+        result = compute_gc_content("ACGT", gc_min_threshold=0.8, gc_max_threshold=0.2)
+        self.assertGreater(len(result.errors), 0)
+
+    def test_rounding(self):
+        """Test rounding behavior."""
+        result = compute_gc_content("ACGTACGT", round_decimals=2)
+        # GC = 0.5, should be 0.5
+        self.assertEqual(result.summary["gc_content"], 0.5)
+        # Sliding window values should be rounded
+        for w in result.summary["sliding_windows"]:
+            self.assertEqual(len(str(w["gc"]).split(".")[-1]), 1 if w["gc"] != 0.5 else 1)
+
+    def test_ambiguous_iupac_behavior(self):
+        """Test that ambiguous IUPAC bases don't count as GC."""
+        # N = any base, not counted as G or C
+        # Sequence: GN = 1 GC out of 2 = 0.5
+        result = compute_gc_content("GN")
+        self.assertEqual(result.summary["gc_content"], 0.5)
+
+    def test_lowercase_input(self):
+        """Test lowercase input is handled."""
+        result = compute_gc_content("acgtacgt")
+        self.assertEqual(result.summary["gc_content"], 0.5)
+
+    def test_metadata_populated(self):
+        """Test that metadata is populated."""
+        result = compute_gc_content("ACGTACGT")
+        self.assertEqual(result.metadata["gc_window_size"], 5)
+        self.assertEqual(result.metadata["round_decimals"], 3)
+        self.assertIn("scoring_note", result.metadata)
 
 
 # =====================================================================
