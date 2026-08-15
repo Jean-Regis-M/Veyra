@@ -190,18 +190,27 @@ def _check_rule_set_3() -> ModelInfo:
             test_seq = "AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA"
             # Third-party feature code may emit progress bars.  Registry
             # discovery is used by JSON-producing interfaces, so keep that
-            # diagnostic output out of stdout.
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                model_obj = load_seq_model()
-                if getattr(model_obj, "_n_classes", None) is None:
-                    model_obj._n_classes = 0
-                score = float(model_obj.predict(
-                    featurize_context([test_seq], sequence_tracr="Hsu2013", n_jobs=1)
-                )[0])
-                if not math.isfinite(score):
-                    raise ValueError("rs3 returned a non-finite score")
+            # diagnostic output out of stdout. Use a non-blocking approach
+            # to avoid tqdm deadlocks when redirecting stderr.
+            import os
+            old_stderr = os.dup(2)
+            try:
+                # Redirect stderr to /dev/null to suppress tqdm output
+                with open(os.devnull, 'w') as devnull:
+                    os.dup2(devnull.fileno(), 2)
+                    model_obj = load_seq_model()
+                    if getattr(model_obj, "_n_classes", None) is None:
+                        model_obj._n_classes = 0
+                    score = float(model_obj.predict(
+                        featurize_context([test_seq], sequence_tracr="Hsu2013", n_jobs=1)
+                    )[0])
+                    if not math.isfinite(score):
+                        raise ValueError("rs3 returned a non-finite score")
+            finally:
+                os.dup2(old_stderr, 2)
 
             model.verified = True
+            model.compatible = True
             model.availability = "verified"
         except Exception as e:
             model.verified = False

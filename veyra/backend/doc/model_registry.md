@@ -38,7 +38,7 @@ model_registry.py
 
 | Model ID | Display Name | Priority | Status | Reason |
 |----------|--------------|----------|--------|--------|
-| `rule_set_3` | Rule Set 3 (Doench 2021) | 1 | `incompatible` | rs3 v0.0.15 has lightgbm 4.7.0 sklearn API incompatibility: `TypeError: '>' not supported between instances of 'NoneType' and 'int'` |
+| `rule_set_3` | Rule Set 3 (Doench 2021) | 1 | `verified` | rs3 v0.0.15 with LightGBM compatibility shim for `_n_classes` attribute; native activity score scale |
 | `rule_set_2` | Rule Set 2 (Doench 2016/Azimuth) | 2 | `incompatible` | Pickled model `V3_model_nopos.pickle` requires sklearn ≤0.16.1; installed version is 1.9.0 (`ModuleNotFoundError: No module named 'sklearn.ensemble._gb_losses'`) |
 | `doench_2014` | Doench 2014 (Rule Set 1) | 3 | `verified` | Pure Python implementation, no external ML dependencies |
 

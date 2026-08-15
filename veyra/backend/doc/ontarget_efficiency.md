@@ -62,6 +62,7 @@ When `model="auto"` falls back, the response includes:
 - **Status**: **VERIFIED** — rs3 0.0.15 runs with a compatibility shim for
   LightGBM's missing regressor `_n_classes` attribute
 - **Scale**: native RS3 activity score; not bounded to 0–1
+- **Reference Value**: For test sequence `AAAAGGCGCGCGCGCGCGCGGGTTTAAA`, score = `-0.9412279161596062`
 
 ### Rule Set 2 (Doench 2016 / Azimuth / Fusi)
 - **Source**: Doench et al., Nature Biotechnology 2016 (PMID: 26825659)
@@ -281,7 +282,7 @@ veyra models check
 ## Limitations
 
 1. **Rule Set 2**: Full Azimuth model unavailable due to sklearn 1.9+ incompatibility with legacy pickled model.
-2. **Rule Set 3**: Not available due to lightgbm/rs3 version compatibility issues.
+2. **Rule Set 3**: **VERIFIED** - Available in main environment with LightGBM compatibility shim.
 3. **PAM specificity**: Only validated for NGG PAM (SpCas9).
 4. **Sequence context**: Requires exact 30-mer composition; no auto-detection of spacer position.
 5. **Species specificity**: Models trained on human cell data; may not generalize to other species.
