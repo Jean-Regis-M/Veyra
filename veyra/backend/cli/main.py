@@ -303,6 +303,38 @@ def _cmd_tools_describe(args):
     return _output_result(result, args)
 
 
+def _cmd_sequence_gc(args):
+    """Handle sequence gc command."""
+    from core.gc import compute_gc_content
+    from schemas.canonical import ComputeGCContentRequest
+
+    # Read sequence from file, stdin, or argument
+    if args.input == "-":
+        sequence = sys.stdin.read().strip()
+    elif args.input and os.path.isfile(args.input):
+        with open(args.input) as f:
+            sequence = f.read().strip()
+    else:
+        sequence = args.sequence
+
+    if not sequence:
+        print("Error: no sequence provided", file=sys.stderr)
+        return 1
+
+    request = ComputeGCContentRequest(
+        sequence=sequence,
+        gc_window_size=args.gc_window_size,
+        gc_split_ratio=args.gc_split_ratio,
+        gc_min_threshold=args.gc_min_threshold,
+        gc_max_threshold=args.gc_max_threshold,
+        include_sliding_window=not args.no_sliding_window,
+        include_half_split=not args.no_half_split,
+        round_decimals=args.round_decimals,
+    )
+    result = compute_gc_content(request)
+    return _output_result(result, args)
+
+
 def _build_parser():
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -432,6 +464,23 @@ def _build_parser():
     _add_output_args(tools_describe_parser)
     tools_describe_parser.set_defaults(func=_cmd_tools_describe)
 
+    # --- sequence ---
+    seq_parser = subparsers.add_parser("sequence", help="Sequence analysis commands")
+    seq_sub = seq_parser.add_subparsers(dest="sequence_command", help="Sequence commands")
+
+    seq_gc_parser = seq_sub.add_parser("gc", help="Compute GC content")
+    seq_gc_parser.add_argument("--sequence", "-s", help="DNA sequence")
+    seq_gc_parser.add_argument("--input", "-i", help="Input file (FASTA) or - for stdin")
+    seq_gc_parser.add_argument("--gc-window-size", type=int, default=5, help="Sliding window size")
+    seq_gc_parser.add_argument("--gc-split-ratio", type=float, default=0.5, help="5'/3' split ratio")
+    seq_gc_parser.add_argument("--gc-min-threshold", type=float, default=0.20, help="Min GC threshold")
+    seq_gc_parser.add_argument("--gc-max-threshold", type=float, default=0.80, help="Max GC threshold")
+    seq_gc_parser.add_argument("--no-sliding-window", action="store_true", help="Disable sliding window")
+    seq_gc_parser.add_argument("--no-half-split", action="store_true", help="Disable 5'/3' split")
+    seq_gc_parser.add_argument("--round-decimals", type=int, default=3, help="Decimal places")
+    _add_output_args(seq_gc_parser)
+    seq_gc_parser.set_defaults(func=_cmd_sequence_gc)
+
     return parser
 
 
@@ -468,6 +517,10 @@ def main(argv=None):
     elif args.command == "tools":
         if not hasattr(args, "tools_command") or not args.tools_command:
             print("Error: specify a subcommand (list, describe)", file=sys.stderr)
+            return 1
+    elif args.command == "sequence":
+        if not hasattr(args, "sequence_command") or not args.sequence_command:
+            print("Error: specify a subcommand (gc)", file=sys.stderr)
             return 1
 
     if hasattr(args, "func"):

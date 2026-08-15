@@ -21,12 +21,14 @@ from schemas.canonical import (
     OfftargetSearchRequest,
     ScoreOfftargetsRequest,
     RankCandidatesRequest,
+    ComputeGCContentRequest,
     VeyraResult,
 )
 from core.pam import pam_scan, pam_scan_region
 from core.ingestion import ingest
 from core.offtarget import build_index, offtarget_search, score_offtargets
 from core.ranking import rank_candidates
+from core.gc import compute_gc_content as _core_compute_gc
 from core.genome import list_genomes, genome_info
 from core.cache import cache_status, cache_clear
 
@@ -267,6 +269,44 @@ def clear_cache(tool_name: str | None = None) -> VeyraResult:
     return cache_clear(tool_name=tool_name)
 
 
+def compute_gc_content(
+    sequence: str,
+    gc_window_size: int = 5,
+    gc_split_ratio: float = 0.5,
+    gc_min_threshold: float = 0.20,
+    gc_max_threshold: float = 0.80,
+    include_sliding_window: bool = True,
+    include_half_split: bool = True,
+    round_decimals: int = 3,
+) -> VeyraResult:
+    """Compute GC content for a DNA sequence.
+
+    Args:
+        sequence: DNA sequence (IUPAC characters allowed).
+        gc_window_size: Sliding window size in nucleotides.
+        gc_split_ratio: Fraction of sequence for 5' half (0–1).
+        gc_min_threshold: Minimum GC for pass filter.
+        gc_max_threshold: Maximum GC for pass filter.
+        include_sliding_window: Whether to compute sliding-window GC.
+        include_half_split: Whether to compute 5'/3' split GC.
+        round_decimals: Decimal places for rounding.
+
+    Returns:
+        VeyraResult with GC content features.
+    """
+    request = ComputeGCContentRequest(
+        sequence=sequence,
+        gc_window_size=gc_window_size,
+        gc_split_ratio=gc_split_ratio,
+        gc_min_threshold=gc_min_threshold,
+        gc_max_threshold=gc_max_threshold,
+        include_sliding_window=include_sliding_window,
+        include_half_split=include_half_split,
+        round_decimals=round_decimals,
+    )
+    return _core_compute_gc(request)
+
+
 __all__ = [
     "ingest_file",
     "pam_scan_raw",
@@ -275,6 +315,7 @@ __all__ = [
     "search_offtargets",
     "score_offtargets_cfd",
     "rank_guides",
+    "compute_gc_content",
     "get_genomes",
     "get_genome_info",
     "get_cache_info",

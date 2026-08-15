@@ -89,6 +89,17 @@ class CacheClearRequestModel(BaseModel):
     tool_name: Optional[str] = None
 
 
+class ComputeGCContentRequestModel(BaseModel):
+    sequence: str
+    gc_window_size: int = 5
+    gc_split_ratio: float = 0.5
+    gc_min_threshold: float = 0.20
+    gc_max_threshold: float = 0.80
+    include_sliding_window: bool = True
+    include_half_split: bool = True
+    round_decimals: int = 3
+
+
 def _result_to_response(result) -> dict:
     """Convert VeyraResult to dict for JSON response."""
     return {
@@ -292,6 +303,28 @@ async def list_tools():
         })
 
     return {"total_tools": len(tools), "tools": tools}
+
+
+@app.post("/sequence/gc")
+async def compute_gc_content(request: ComputeGCContentRequestModel):
+    """Compute GC content for a DNA sequence."""
+    from core.gc import compute_gc_content
+    from schemas.canonical import ComputeGCContentRequest
+
+    req = ComputeGCContentRequest(
+        sequence=request.sequence,
+        gc_window_size=request.gc_window_size,
+        gc_split_ratio=request.gc_split_ratio,
+        gc_min_threshold=request.gc_min_threshold,
+        gc_max_threshold=request.gc_max_threshold,
+        include_sliding_window=request.include_sliding_window,
+        include_half_split=request.include_half_split,
+        round_decimals=request.round_decimals,
+    )
+    result = compute_gc_content(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
 
 
 if __name__ == "__main__":

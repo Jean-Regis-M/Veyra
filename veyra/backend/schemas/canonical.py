@@ -108,6 +108,19 @@ class CacheClearRequest:
     tool_name: str | None = None
 
 
+@dataclass
+class ComputeGCContentRequest:
+    """Request for computing GC content of a DNA sequence."""
+    sequence: str
+    gc_window_size: int = 5
+    gc_split_ratio: float = 0.5
+    gc_min_threshold: float = 0.20
+    gc_max_threshold: float = 0.80
+    include_sliding_window: bool = True
+    include_half_split: bool = True
+    round_decimals: int = 3
+
+
 # ============================================================================
 # Result schemas
 # ============================================================================

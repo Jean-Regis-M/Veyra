@@ -21,6 +21,7 @@ from mcp.tools.build_offtarget_index import build_offtarget_index
 from mcp.tools.offtarget_search import offtarget_search
 from mcp.tools.score_offtargets import score_offtargets
 from mcp.tools.rank_candidates import rank_candidates
+from mcp.tools.compute_gc_content import compute_gc_content
 from mcp.schemas import PAMSiteRow
 
 # ---------------------------------------------------------------------------
@@ -63,6 +64,12 @@ TOOL_REGISTRY: dict[str, dict] = {
         "description": "Aggregate off-target evidence and rank candidate guides",
         "cost": "moderate",
         "tier": 2,
+    },
+    "compute_gc_content": {
+        "function": compute_gc_content,
+        "description": "Compute GC content and optional sliding-window / 5'-3' split features for a DNA sequence",
+        "cost": "cheap / deterministic",
+        "tier": 1,
     },
 }
 
