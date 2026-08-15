@@ -142,6 +142,16 @@ class TestPAMScan(unittest.TestCase):
         self.assertEqual(result.summary["total_sites"], 1)
         self.assertIsNone(result.rows[0].protospacer)
 
+    def test_reverse_strand_downstream_protospacer(self):
+        sequence = "ACGTGACCTGAGGCTGATCCGTAGGCTAGCTAGG"
+        result = pam_scan(sequence)
+        hit = next(row for row in result.rows if row.start == 7 and row.end == 10 and row.strand == "-")
+        self.assertEqual(hit.pam, "AGG")
+        self.assertEqual(hit.protospacer, "CTAGCCTACGGATCAGCCTC")
+
+        boundary_hit = next(row for row in result.rows if row.start == 19 and row.end == 22 and row.strand == "-")
+        self.assertIsNone(boundary_hit.protospacer)
+
     def test_empty_sequence(self):
         result = pam_scan("")
         # Empty sequence returns either error or zero sites

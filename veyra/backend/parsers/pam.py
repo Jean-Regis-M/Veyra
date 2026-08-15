@@ -131,11 +131,13 @@ def _scan_regex(
         spacer_seq_rev: str | None = None
 
         if pam_position == "3prime":
-            # On reverse strand, spacer is downstream (3') of PAM on reverse strand
-            # which means upstream (5') on forward strand
-            spacer_end_rev = pos  # end of spacer on forward strand
-            spacer_start_rev = pos - spacer_len
-            if spacer_start_rev >= 0:
+            # On a reverse-strand 3' PAM, the protospacer is downstream of
+            # the PAM in reference coordinates.  Keep spacer_sequence in
+            # reference orientation; guide_rna below converts it to guide
+            # orientation.  This also preserves the public coordinates.
+            spacer_start_rev = pos + len(pam_seq)
+            spacer_end_rev = spacer_start_rev + spacer_len
+            if spacer_end_rev <= seq_len:
                 spacer_seq_rev = seq_upper[spacer_start_rev:spacer_end_rev]
         else:
             # 5prime PAM: on reverse strand, spacer is upstream (5') on rev strand
@@ -294,9 +296,11 @@ def _scan_fmindex(
             spacer_seq_rev: str | None = None
 
             if pam_position == "3prime":
-                spacer_end_rev = pos
-                spacer_start_rev = pos - spacer_len
-                if spacer_start_rev >= 0:
+                # Same geometry as the regex scanner: downstream of the
+                # reverse-strand PAM in reference coordinates.
+                spacer_start_rev = pos + pam_len
+                spacer_end_rev = spacer_start_rev + spacer_len
+                if spacer_end_rev <= seq_len:
                     spacer_seq_rev = seq_upper[spacer_start_rev:spacer_end_rev]
             else:
                 spacer_start_rev = pos + pam_len

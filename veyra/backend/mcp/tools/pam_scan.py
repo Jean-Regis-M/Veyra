@@ -119,10 +119,13 @@ def pam_scan(
             spacer: str | None = None
 
             if pam_position == "3prime":
-                s_end = pos
-                s_start = pos - protospacer_len
-                if s_start >= 0:
-                    spacer = seq[s_start:s_end]
+                # For a reverse-strand 3' PAM, the protospacer is downstream
+                # in reference orientation. Convert that interval into guide
+                # orientation by reverse-complementing it.
+                s_start = pos + len(m.group())
+                s_end = s_start + protospacer_len
+                if s_end <= seq_len:
+                    spacer = _complement(seq[s_start:s_end])
             else:
                 s_start = pos + len(m.group())
                 if s_start + protospacer_len <= seq_len:

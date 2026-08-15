@@ -397,6 +397,37 @@ class TestPAMScanner(unittest.TestCase):
         rev_sites = [s for s in result.pam_sites if s.strand == -1]
         self.assertGreater(len(rev_sites), 0)
 
+    def test_scan_pam_reverse_strand_protospacer_uses_downstream_interval(self):
+        from parsers.pam import scan_pam
+
+        sequence = "ACGTGACCTGAGGCTGATCCGTAGGCTAGCTAGG"
+        result = scan_pam(sequence, pam_name="SpCas9")
+        hit = next(
+            site for site in result.pam_sites
+            if site.position == 6 and site.strand == -1
+        )
+
+        # The reference interval is positions 10..29 (1-based) after the
+        # reverse-strand CCT match; guide_rna is its reverse complement.
+        self.assertEqual((hit.spacer_start, hit.spacer_end), (9, 29))
+        self.assertEqual(hit.spacer_sequence, "GAGGCTGATCCGTAGGCTAG")
+        self.assertEqual(hit.guide_rna, "CTAGCCTACGGATCAGCCTC")
+
+    def test_scan_pam_fmindex_matches_reverse_protospacer_geometry(self):
+        from parsers.pam import FM_INDEX_THRESHOLD, scan_pam
+
+        target = "ACGTGACCTGAGGCTGATCCGTAGGCTAGCTAGG"
+        offset = 50_000
+        sequence = "T" * offset + target + "T" * (FM_INDEX_THRESHOLD + 1000 - offset - len(target))
+        result = scan_pam(sequence, pam_name="SpCas9")
+        hit = next(
+            site for site in result.pam_sites
+            if site.position == offset + 6 and site.strand == -1
+        )
+        self.assertEqual((hit.spacer_start, hit.spacer_end), (offset + 9, offset + 29))
+        self.assertEqual(hit.spacer_sequence, "GAGGCTGATCCGTAGGCTAG")
+        self.assertEqual(hit.guide_rna, "CTAGCCTACGGATCAGCCTC")
+
     def test_scan_pam_cas12a(self):
         from parsers.pam import scan_pam
 
