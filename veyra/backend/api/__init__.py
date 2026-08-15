@@ -28,6 +28,7 @@ from schemas.canonical import (
     ComputePositionalFeaturesRequest,
     ComputeDinucleotideCompositionRequest,
     ComputeSeedGCRequest,
+    ComputeOnTargetEfficiencyRequest,
     VeyraResult,
 )
 from core.pam import pam_scan, pam_scan_region
@@ -41,6 +42,7 @@ from core.ss import compute_secondary_structure as _core_compute_ss
 from core.positional_features import compute_positional_features as _core_compute_pf
 from core.dinucleotide import compute_dinucleotide_composition as _core_compute_dinuc
 from core.seed_gc import compute_seed_gc as _core_compute_seed_gc
+from core.ontarget import predict_ontarget_efficiency as _core_predict_ontarget
 from core.genome import list_genomes, genome_info
 from core.cache import cache_status, cache_clear
 
@@ -169,6 +171,9 @@ def search_offtargets(
     chrom: str | None = None,
     start: int | None = None,
     end: int | None = None,
+    strand_search: str = "both",
+    max_results: int = 1000,
+    device: str = "auto",
 ) -> VeyraResult:
     """Search for off-target matches.
 
@@ -186,6 +191,9 @@ def search_offtargets(
         chrom: Chromosome name (required when search_scope="region").
         start: Start position, 1-based (required when search_scope="region").
         end: End position, exclusive (required when search_scope="region").
+        strand_search: Filter by strand: "both", "fwd" (+), or "rev" (-).
+        max_results: Maximum results to return. Truncates and sets results_truncated flag.
+        device: Execution device. "auto" or "cpu". "gpu" is rejected for cas_offinder.
 
     Returns:
         VeyraResult with off-target candidates.
@@ -204,6 +212,9 @@ def search_offtargets(
         chrom=chrom,
         start=start,
         end=end,
+        strand_search=strand_search,
+        max_results=max_results,
+        device=device,
     )
     return offtarget_search(request)
 
@@ -638,6 +649,52 @@ def compute_cut_site(
     return _core_cut_site(request)
 
 
+def predict_ontarget_efficiency(
+    context_sequence: str,
+    model: str = "rule_set_2",
+    context_upstream: int = 4,
+    context_downstream: int = 3,
+    spacer_length: int = 20,
+    normalize_score: bool = False,
+    round_decimals: int = 3,
+    precomputed_features: dict | None = None,
+) -> VeyraResult:
+    """Predict on-target SpCas9 efficiency.
+    
+    This is fundamentally different from CFD/off-target specificity.
+    It answers: "How efficiently is this intended guide expected to cut?"
+    
+    Available models:
+    - rule_set_2: Doench 2016 / Fusi / Azimuth (AdaBoost, 0-1 scale)
+    - rule_set_3: NOT IMPLEMENTED (model files not available)
+    - both: Run both independently (Rule Set 3 will be null)
+    
+    Args:
+        context_sequence: Full context sequence (upstream + spacer + PAM + downstream).
+        model: "rule_set_2", "rule_set_3", or "both".
+        context_upstream: Number of nucleotides upstream of spacer.
+        context_downstream: Number of nucleotides downstream of PAM.
+        spacer_length: Length of the spacer/protospacer.
+        normalize_score: Whether to normalize score to [0,1].
+        round_decimals: Decimal places for rounding output values.
+        precomputed_features: Optional precomputed features to reuse.
+    
+    Returns:
+        VeyraResult with on-target efficiency scores.
+    """
+    request = ComputeOnTargetEfficiencyRequest(
+        context_sequence=context_sequence,
+        model=model,
+        context_upstream=context_upstream,
+        context_downstream=context_downstream,
+        spacer_length=spacer_length,
+        normalize_score=normalize_score,
+        round_decimals=round_decimals,
+        precomputed_features=precomputed_features,
+    )
+    return _core_predict_ontarget(request)
+
+
 __all__ = [
     "ingest_file",
     "pam_scan_raw",
@@ -655,6 +712,7 @@ __all__ = [
     "compute_seed_gc",
     "analyze_mismatch_seed",
     "compute_cut_site",
+    "predict_ontarget_efficiency",
     "get_genomes",
     "get_genome_info",
     "get_cache_info",

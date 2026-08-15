@@ -77,6 +77,9 @@ class OfftargetSearchRequestModel(BaseModel):
     chrom: Optional[str] = None
     start: Optional[int] = None
     end: Optional[int] = None
+    strand_search: str = "both"
+    max_results: int = 1000
+    device: str = "auto"
 
 
 class ScoreOfftargetsRequestModel(BaseModel):
@@ -185,6 +188,17 @@ class ComputeCutSiteRequestModel(BaseModel):
     return_genomic_coord: bool = True
     return_relative_coord: bool = True
     chrom: str = ""
+
+
+class PredictOnTargetEfficiencyRequestModel(BaseModel):
+    context_sequence: str
+    model: str = "auto"
+    context_upstream: int = 4
+    context_downstream: int = 3
+    spacer_length: int = 20
+    normalize_score: bool = False
+    round_decimals: int = 3
+    precomputed_features: Optional[dict[str, Any]] = None
 
 
 def _result_to_response(result) -> dict:
@@ -303,6 +317,9 @@ async def offtarget_search(request: OfftargetSearchRequestModel):
         chrom=request.chrom,
         start=request.start,
         end=request.end,
+        strand_search=request.strand_search,
+        max_results=request.max_results,
+        device=request.device,
     )
     result = offtarget_search(req)
     if result.errors:
@@ -590,6 +607,32 @@ async def compute_cut_site(request: ComputeCutSiteRequestModel):
         chrom=request.chrom,
     )
     result = compute_cut_site(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/score/ontarget")
+async def predict_ontarget_efficiency(request: PredictOnTargetEfficiencyRequestModel):
+    """Predict on-target SpCas9 efficiency (Rule Set 2 / Rule Set 3).
+    
+    This is fundamentally different from CFD/off-target specificity.
+    It answers: "How efficiently is this intended guide expected to cut?"
+    """
+    from core.ontarget import predict_ontarget_efficiency
+    from schemas.canonical import ComputeOnTargetEfficiencyRequest
+
+    req = ComputeOnTargetEfficiencyRequest(
+        context_sequence=request.context_sequence,
+        model=request.model,
+        context_upstream=request.context_upstream,
+        context_downstream=request.context_downstream,
+        spacer_length=request.spacer_length,
+        normalize_score=request.normalize_score,
+        round_decimals=request.round_decimals,
+        precomputed_features=request.precomputed_features,
+    )
+    result = predict_ontarget_efficiency(req)
     if result.errors:
         raise HTTPException(status_code=400, detail={"errors": result.errors})
     return _result_to_response(result)

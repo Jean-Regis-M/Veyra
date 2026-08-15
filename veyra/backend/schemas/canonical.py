@@ -72,6 +72,9 @@ class OfftargetSearchRequest:
     chrom: str | None = None
     start: int | None = None
     end: int | None = None
+    strand_search: str = "both"
+    max_results: int = 1000
+    device: str = "auto"
 
 
 @dataclass
@@ -208,6 +211,19 @@ class ComputeCutSiteRequest:
     return_genomic_coord: bool = True
     return_relative_coord: bool = True
     chrom: str = ""
+
+
+@dataclass
+class ComputeOnTargetEfficiencyRequest:
+    """Request for predicting on-target SpCas9 efficiency."""
+    context_sequence: str
+    model: str = "auto"
+    context_upstream: int = 4
+    context_downstream: int = 3
+    spacer_length: int = 20
+    normalize_score: bool = False
+    round_decimals: int = 3
+    precomputed_features: dict[str, Any] | None = None
 
 
 # ============================================================================
