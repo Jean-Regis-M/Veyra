@@ -3,6 +3,18 @@
 Status: Verified against implementation
 Source of truth: `veyra/backend/api/__init__.py`, `veyra/backend/core/*.py`, `veyra/backend/schemas/canonical.py`, `veyra/backend/mcp/server.py`, `veyra/backend/http_api/app.py`, `veyra/backend/cli/main.py`
 
+## MIDEND upload validation
+
+The public MIDEND accepts validated multipart uploads at `POST /inputs/file`.
+The implemented backend ingestion formats are FASTA (`.fa`, `.fasta`, `.fna`,
+`.faa`, `.fns`, `.frn`), FASTQ (`.fq`, `.fastq`, `.fqr`), and GenBank (`.gb`,
+`.gbk`, `.gbff`, `.genbank`). GFF/GFF3 and plain DNA text files are not file
+inputs until a corresponding backend parser exists. MIDEND validates extension,
+content/MIME consistency, UTF-8 structure, records, nucleotide characters, a
+50 MiB size limit, and filename safety before storing an input ID. Invalid
+inputs return structured validation errors and cannot reach AI or backend
+execution. See `midend/doc/input_validation.md`.
+
 ---
 
 ## 1. Purpose and scope
