@@ -166,7 +166,7 @@ class TestToolsInterfaceParity(unittest.TestCase):
         """Test Python API tools list via MCP server."""
         from mcp.server import TOOL_REGISTRY
 
-        self.assertEqual(len(TOOL_REGISTRY), 15)
+        self.assertEqual(len(TOOL_REGISTRY), 16)
         self.assertIn("pam_scan", TOOL_REGISTRY)
         self.assertIn("offtarget_search", TOOL_REGISTRY)
         self.assertIn("compute_gc_content", TOOL_REGISTRY)
@@ -195,7 +195,7 @@ class TestToolsInterfaceParity(unittest.TestCase):
         response = client.get("/tools")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["total_tools"], 15)
+        self.assertEqual(data["total_tools"], 16)
 
 
 class TestCLIOutputFormats(unittest.TestCase):

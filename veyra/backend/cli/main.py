@@ -159,6 +159,13 @@ def _cmd_offtarget_search(args):
         max_mismatches=args.max_mismatches,
         allow_bulge=args.allow_bulge,
         cas_variant=args.cas_variant,
+        backend=args.backend,
+        max_dna_bulge=args.max_dna_bulge,
+        max_rna_bulge=args.max_rna_bulge,
+        search_scope=args.search_scope,
+        chrom=args.chrom,
+        start=args.start,
+        end=args.end,
     )
     result = offtarget_search(request)
     return _output_result(result, args)
@@ -335,6 +342,208 @@ def _cmd_sequence_gc(args):
     return _output_result(result, args)
 
 
+def _cmd_sequence_homopolymer(args):
+    """Handle sequence homopolymer command."""
+    from core.homopolymer import check_homopolymer_runs
+    from schemas.canonical import CheckHomopolymerRunsRequest
+
+    # Read sequence from file, stdin, or argument
+    if args.input == "-":
+        sequence = sys.stdin.read().strip()
+    elif args.input and os.path.isfile(args.input):
+        with open(args.input) as f:
+            sequence = f.read().strip()
+    else:
+        sequence = args.sequence
+
+    if not sequence:
+        print("Error: no sequence provided", file=sys.stderr)
+        return 1
+
+    request = CheckHomopolymerRunsRequest(
+        sequence=sequence,
+        homopolymer_min_run=args.homopolymer_min_run,
+        polyT_strict=args.polyT_strict == "true",
+        polyG_strict=args.polyG_strict == "true",
+        check_bases=args.check_bases,
+        return_run_positions=args.return_run_positions == "true",
+    )
+    result = check_homopolymer_runs(request)
+    return _output_result(result, args)
+
+
+def _cmd_sequence_tm(args):
+    """Handle sequence tm command."""
+    from core.tm import compute_melting_temp
+    from schemas.canonical import ComputeMeltingTempRequest
+
+    # Read sequence from file, stdin, or argument
+    if args.input == "-":
+        sequence = sys.stdin.read().strip()
+    elif args.input and os.path.isfile(args.input):
+        with open(args.input) as f:
+            sequence = f.read().strip()
+    else:
+        sequence = args.sequence
+
+    if not sequence:
+        print("Error: no sequence provided", file=sys.stderr)
+        return 1
+
+    request = ComputeMeltingTempRequest(
+        sequence=sequence,
+        tm_method=args.tm_method,
+        na_conc=args.na_conc,
+        mg_conc=args.mg_conc,
+        primer_conc=args.primer_conc,
+        seed_region_length=args.seed_region_length,
+        compute_seed_tm=args.compute_seed_tm,
+        round_decimals=args.round_decimals,
+    )
+    result = compute_melting_temp(request)
+    return _output_result(result, args)
+
+
+def _cmd_sequence_secondary_structure(args):
+    """Handle sequence secondary-structure command."""
+    from core.ss import compute_secondary_structure
+    from schemas.canonical import ComputeSecondaryStructureRequest
+
+    # Read sequence from file, stdin, or argument
+    if args.input == "-":
+        sequence = sys.stdin.read().strip()
+    elif args.input and os.path.isfile(args.input):
+        with open(args.input) as f:
+            sequence = f.read().strip()
+    else:
+        sequence = args.sequence
+
+    if not sequence:
+        print("Error: no sequence provided", file=sys.stderr)
+        return 1
+
+    request = ComputeSecondaryStructureRequest(
+        sequence=sequence,
+        mfe_include_scaffold=args.mfe_include_scaffold,
+        scaffold_sequence=args.scaffold_sequence,
+        temperature_celsius=args.temperature_celsius,
+        return_structure_string=args.return_structure_string,
+        mfe_threshold=args.mfe_threshold,
+    )
+    result = compute_secondary_structure(request)
+    return _output_result(result, args)
+
+
+def _cmd_sequence_positional_features(args):
+    """Handle sequence positional-features command."""
+    from core.positional_features import compute_positional_features
+    from schemas.canonical import ComputePositionalFeaturesRequest
+
+    # Read sequence from file, stdin, or argument
+    if args.input == "-":
+        sequence = sys.stdin.read().strip()
+    elif args.input and os.path.isfile(args.input):
+        with open(args.input) as f:
+            sequence = f.read().strip()
+    else:
+        sequence = args.sequence
+
+    if not sequence:
+        print("Error: no sequence provided", file=sys.stderr)
+        return 1
+
+    request = ComputePositionalFeaturesRequest(
+        sequence=sequence,
+        spacer_length=args.spacer_length,
+        return_onehot=not args.no_onehot,
+        check_position20_bias=not args.no_position20_bias,
+        custom_check_positions=args.custom_check_positions or [],
+        onehot_alphabet=args.onehot_alphabet,
+    )
+    result = compute_positional_features(request)
+    return _output_result(result, args)
+
+
+def _cmd_sequence_dinucleotide_composition(args):
+    """Handle sequence dinucleotide-composition command."""
+    from core.dinucleotide import compute_dinucleotide_composition
+    from schemas.canonical import ComputeDinucleotideCompositionRequest
+
+    # Read sequence from file, stdin, or argument
+    if args.input == "-":
+        sequence = sys.stdin.read().strip()
+    elif args.input and os.path.isfile(args.input):
+        with open(args.input) as f:
+            sequence = f.read().strip()
+    else:
+        sequence = args.sequence
+
+    if not sequence:
+        print("Error: no sequence provided", file=sys.stderr)
+        return 1
+
+    request = ComputeDinucleotideCompositionRequest(
+        sequence=sequence,
+        spacer_length=args.spacer_length,
+        window_size=args.window_size,
+        return_full_matrix=args.return_full_matrix,
+        normalize_counts=args.normalize_counts,
+        target_dinucleotides=args.target_dinucleotides or [],
+    )
+    result = compute_dinucleotide_composition(request)
+    return _output_result(result, args)
+
+
+def _cmd_sequence_seed_gc(args):
+    """Handle sequence seed-gc command."""
+    from core.seed_gc import compute_seed_gc
+    from schemas.canonical import ComputeSeedGCRequest
+
+    # Read sequence from file, stdin, or argument
+    if args.input == "-":
+        sequence = sys.stdin.read().strip()
+    elif args.input and os.path.isfile(args.input):
+        with open(args.input) as f:
+            sequence = f.read().strip()
+    else:
+        sequence = args.sequence
+
+    if not sequence:
+        print("Error: no sequence provided", file=sys.stderr)
+        return 1
+
+    request = ComputeSeedGCRequest(
+        sequence=sequence,
+        seed_region_length=args.seed_region_length,
+        seed_anchor=args.seed_anchor,
+        seed_min_threshold=args.seed_min_threshold,
+        seed_max_threshold=args.seed_max_threshold,
+        compute_seed_distal_delta=args.compute_seed_distal_delta,
+        round_decimals=args.round_decimals,
+    )
+    result = compute_seed_gc(request)
+    return _output_result(result, args)
+
+
+def _cmd_sequence_cut_site(args):
+    """Handle sequence cut-site command."""
+    from core.cut_site import compute_cut_site
+    from schemas.canonical import ComputeCutSiteRequest
+
+    request = ComputeCutSiteRequest(
+        spacer_start=args.spacer_start,
+        spacer_length=args.spacer_length,
+        strand=args.strand,
+        pam_position=args.pam_position,
+        cut_offset_from_pam=args.cut_offset_from_pam,
+        return_genomic_coord=args.return_genomic_coord,
+        return_relative_coord=args.return_relative_coord,
+        chrom=args.chrom,
+    )
+    result = compute_cut_site(request)
+    return _output_result(result, args)
+
+
 def _build_parser():
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -402,6 +611,17 @@ def _build_parser():
     search_parser.add_argument("--max-mismatches", type=int, default=4, help="Max mismatches")
     search_parser.add_argument("--allow-bulge", action="store_true", help="Allow bulges")
     search_parser.add_argument("--cas-variant", default="SpCas9", help="Cas variant")
+    search_parser.add_argument("--backend", default="bwa", choices=["bwa", "cas_offinder"],
+                               help="Search backend")
+    search_parser.add_argument("--max-dna-bulge", type=int, default=0,
+                               help="Max DNA bulge size (cas_offinder only)")
+    search_parser.add_argument("--max-rna-bulge", type=int, default=0,
+                               help="Max RNA bulge size (cas_offinder only)")
+    search_parser.add_argument("--search-scope", default="genome", choices=["genome", "region"],
+                               help="Search scope (cas_offinder only)")
+    search_parser.add_argument("--chrom", default=None, help="Chromosome (for region scope)")
+    search_parser.add_argument("--start", type=int, default=None, help="Start position (for region scope)")
+    search_parser.add_argument("--end", type=int, default=None, help="End position (for region scope)")
     _add_output_args(search_parser)
     search_parser.set_defaults(func=_cmd_offtarget_search)
 
@@ -481,6 +701,109 @@ def _build_parser():
     _add_output_args(seq_gc_parser)
     seq_gc_parser.set_defaults(func=_cmd_sequence_gc)
 
+    # --- sequence homopolymer ---
+    seq_homopolymer_parser = seq_sub.add_parser("homopolymer", help="Check homopolymer runs")
+    seq_homopolymer_parser.add_argument("--sequence", "-s", help="DNA sequence")
+    seq_homopolymer_parser.add_argument("--input", "-i", help="Input file or - for stdin")
+    seq_homopolymer_parser.add_argument("--homopolymer-min-run", type=int, default=4, help="Min run length")
+    seq_homopolymer_parser.add_argument("--polyT-strict", type=str, default="true", choices=["true", "false"])
+    seq_homopolymer_parser.add_argument("--polyG-strict", type=str, default="false", choices=["true", "false"])
+    seq_homopolymer_parser.add_argument("--check-bases", default="ACGT", help="Bases to scan")
+    seq_homopolymer_parser.add_argument("--return-run-positions", type=str, default="false", choices=["true", "false"])
+    _add_output_args(seq_homopolymer_parser)
+    seq_homopolymer_parser.set_defaults(func=_cmd_sequence_homopolymer)
+
+    # --- sequence tm ---
+    seq_tm_parser = seq_sub.add_parser("tm", help="Compute melting temperature")
+    seq_tm_parser.add_argument("--sequence", "-s", help="DNA sequence")
+    seq_tm_parser.add_argument("--input", "-i", help="Input file or - for stdin")
+    seq_tm_parser.add_argument("--tm-method", default="nearest_neighbor",
+                               choices=["nearest_neighbor", "wallace", "gc_percent"])
+    seq_tm_parser.add_argument("--na-conc", type=float, default=50.0, help="Na+ concentration (mM)")
+    seq_tm_parser.add_argument("--mg-conc", type=float, default=0.0, help="Mg2+ concentration (mM)")
+    seq_tm_parser.add_argument("--primer-conc", type=float, default=250.0, help="Primer concentration (nM)")
+    seq_tm_parser.add_argument("--seed-region-length", type=int, default=10, help="Seed region length")
+    seq_tm_parser.add_argument("--compute-seed-tm", action="store_true", help="Compute seed Tm")
+    seq_tm_parser.add_argument("--round-decimals", type=int, default=2, help="Decimal places")
+    _add_output_args(seq_tm_parser)
+    seq_tm_parser.set_defaults(func=_cmd_sequence_tm)
+
+    # --- sequence secondary-structure ---
+    seq_ss_parser = seq_sub.add_parser("secondary-structure", help="Compute secondary structure / MFE")
+    seq_ss_parser.add_argument("--sequence", "-s", help="DNA sequence")
+    seq_ss_parser.add_argument("--input", "-i", help="Input file or - for stdin")
+    seq_ss_parser.add_argument("--mfe-include-scaffold", action="store_true",
+                               help="Fold sequence + scaffold together")
+    seq_ss_parser.add_argument("--scaffold-sequence", default="", help="Scaffold RNA sequence")
+    seq_ss_parser.add_argument("--temperature-celsius", type=float, default=37.0,
+                               help="Folding temperature (°C)")
+    seq_ss_parser.add_argument("--return-structure-string", action="store_true",
+                               help="Include dot-bracket structure")
+    seq_ss_parser.add_argument("--mfe-threshold", type=float, default=-5.0,
+                               help="MFE threshold (kcal/mol)")
+    _add_output_args(seq_ss_parser)
+    seq_ss_parser.set_defaults(func=_cmd_sequence_secondary_structure)
+
+    # --- sequence positional-features ---
+    seq_pf_parser = seq_sub.add_parser("positional-features", help="Compute positional nucleotide features")
+    seq_pf_parser.add_argument("--sequence", "-s", help="DNA sequence")
+    seq_pf_parser.add_argument("--input", "-i", help="Input file or - for stdin")
+    seq_pf_parser.add_argument("--spacer-length", type=int, default=20, help="Spacer length (default: 20)")
+    seq_pf_parser.add_argument("--no-onehot", action="store_true", help="Disable one-hot output")
+    seq_pf_parser.add_argument("--no-position20-bias", action="store_true", help="Disable position-20 check")
+    seq_pf_parser.add_argument("--custom-check-positions", nargs="*", type=int, default=[],
+                               help="1-based positions to extract")
+    seq_pf_parser.add_argument("--onehot-alphabet", default="ACGT", help="One-hot alphabet (default: ACGT)")
+    _add_output_args(seq_pf_parser)
+    seq_pf_parser.set_defaults(func=_cmd_sequence_positional_features)
+
+    # --- sequence dinucleotide-composition ---
+    seq_dinuc_parser = seq_sub.add_parser("dinucleotide-composition", help="Compute dinucleotide/k-mer composition")
+    seq_dinuc_parser.add_argument("--sequence", "-s", help="DNA sequence")
+    seq_dinuc_parser.add_argument("--input", "-i", help="Input file or - for stdin")
+    seq_dinuc_parser.add_argument("--spacer-length", type=int, default=20, help="Spacer length (default: 20)")
+    seq_dinuc_parser.add_argument("--window-size", type=int, default=2, help="k-mer window size (default: 2)")
+    seq_dinuc_parser.add_argument("--return-full-matrix", action="store_true", help="Include position-anchored matrix")
+    seq_dinuc_parser.add_argument("--normalize-counts", action="store_true", help="Include normalized frequencies")
+    seq_dinuc_parser.add_argument("--target-dinucleotides", nargs="*", default=[],
+                                  help="Specific k-mers to report")
+    _add_output_args(seq_dinuc_parser)
+    seq_dinuc_parser.set_defaults(func=_cmd_sequence_dinucleotide_composition)
+
+    # --- sequence seed-gc ---
+    seq_seed_gc_parser = seq_sub.add_parser("seed-gc", help="Compute PAM-proximal seed GC content")
+    seq_seed_gc_parser.add_argument("--sequence", "-s", help="DNA sequence")
+    seq_seed_gc_parser.add_argument("--input", "-i", help="Input file or - for stdin")
+    seq_seed_gc_parser.add_argument("--seed-region-length", type=int, default=10,
+                                   help="Seed region length (default: 10)")
+    seq_seed_gc_parser.add_argument("--seed-anchor", default="pam_proximal",
+                                   choices=["pam_proximal"], help="Seed anchor point")
+    seq_seed_gc_parser.add_argument("--seed-min-threshold", type=float, default=0.20,
+                                   help="Min GC threshold (default: 0.20)")
+    seq_seed_gc_parser.add_argument("--seed-max-threshold", type=float, default=0.80,
+                                   help="Max GC threshold (default: 0.80)")
+    seq_seed_gc_parser.add_argument("--compute-seed-distal-delta", action="store_true",
+                                   help="Compute distal GC and delta")
+    seq_seed_gc_parser.add_argument("--round-decimals", type=int, default=3,
+                                   help="Decimal places for rounding")
+    _add_output_args(seq_seed_gc_parser)
+    seq_seed_gc_parser.set_defaults(func=_cmd_sequence_seed_gc)
+
+    # --- sequence cut-site ---
+    seq_cut_site_parser = seq_sub.add_parser("cut-site", help="Compute canonical SpCas9 cleavage-site position")
+    seq_cut_site_parser.add_argument("--spacer-start", type=int, required=True, help="0-based spacer start coordinate")
+    seq_cut_site_parser.add_argument("--spacer-length", type=int, default=20, help="Spacer length (default: 20)")
+    seq_cut_site_parser.add_argument("--strand", default="+", choices=["+", "-"], help="Strand (default: +)")
+    seq_cut_site_parser.add_argument("--pam-position", default="3prime", help="PAM position (default: 3prime)")
+    seq_cut_site_parser.add_argument("--cut-offset-from-pam", type=int, default=-3, help="Cut offset from PAM (default: -3)")
+    seq_cut_site_parser.add_argument("--return-genomic-coord", action="store_true", default=True, help="Return genomic coordinate")
+    seq_cut_site_parser.add_argument("--no-genomic-coord", dest="return_genomic_coord", action="store_false", help="Omit genomic coordinate")
+    seq_cut_site_parser.add_argument("--return-relative-coord", action="store_true", default=True, help="Return relative coordinate")
+    seq_cut_site_parser.add_argument("--no-relative-coord", dest="return_relative_coord", action="store_false", help="Omit relative coordinate")
+    seq_cut_site_parser.add_argument("--chrom", default="", help="Chromosome (required for genomic coordinate)")
+    _add_output_args(seq_cut_site_parser)
+    seq_cut_site_parser.set_defaults(func=_cmd_sequence_cut_site)
+
     return parser
 
 
@@ -520,7 +843,7 @@ def main(argv=None):
             return 1
     elif args.command == "sequence":
         if not hasattr(args, "sequence_command") or not args.sequence_command:
-            print("Error: specify a subcommand (gc)", file=sys.stderr)
+            print("Error: specify a subcommand (gc, homopolymer, tm, secondary-structure, positional-features, dinucleotide-composition, seed-gc)", file=sys.stderr)
             return 1
 
     if hasattr(args, "func"):

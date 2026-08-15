@@ -22,6 +22,12 @@ from schemas.canonical import (
     ScoreOfftargetsRequest,
     RankCandidatesRequest,
     ComputeGCContentRequest,
+    CheckHomopolymerRunsRequest,
+    ComputeMeltingTempRequest,
+    ComputeSecondaryStructureRequest,
+    ComputePositionalFeaturesRequest,
+    ComputeDinucleotideCompositionRequest,
+    ComputeSeedGCRequest,
     VeyraResult,
 )
 from core.pam import pam_scan, pam_scan_region
@@ -29,6 +35,12 @@ from core.ingestion import ingest
 from core.offtarget import build_index, offtarget_search, score_offtargets
 from core.ranking import rank_candidates
 from core.gc import compute_gc_content as _core_compute_gc
+from core.homopolymer import check_homopolymer_runs as _core_check_homopolymer
+from core.tm import compute_melting_temp as _core_compute_tm
+from core.ss import compute_secondary_structure as _core_compute_ss
+from core.positional_features import compute_positional_features as _core_compute_pf
+from core.dinucleotide import compute_dinucleotide_composition as _core_compute_dinuc
+from core.seed_gc import compute_seed_gc as _core_compute_seed_gc
 from core.genome import list_genomes, genome_info
 from core.cache import cache_status, cache_clear
 
@@ -150,6 +162,13 @@ def search_offtargets(
     max_mismatches: int = 4,
     allow_bulge: bool = False,
     cas_variant: str = "SpCas9",
+    backend: str = "bwa",
+    max_dna_bulge: int = 0,
+    max_rna_bulge: int = 0,
+    search_scope: str = "genome",
+    chrom: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
 ) -> VeyraResult:
     """Search for off-target matches.
 
@@ -158,8 +177,15 @@ def search_offtargets(
         genome_id: Genome identifier.
         pam_pattern: IUPAC PAM pattern.
         max_mismatches: Maximum mismatches allowed.
-        allow_bulge: Allow bulges (not yet supported).
+        allow_bulge: Allow bulges (uses cas_offinder backend).
         cas_variant: Cas variant name.
+        backend: "bwa" or "cas_offinder".
+        max_dna_bulge: Maximum DNA bulge size (cas_offinder only).
+        max_rna_bulge: Maximum RNA bulge size (cas_offinder only).
+        search_scope: "genome" or "region" (cas_offinder only).
+        chrom: Chromosome name (required when search_scope="region").
+        start: Start position, 1-based (required when search_scope="region").
+        end: End position, exclusive (required when search_scope="region").
 
     Returns:
         VeyraResult with off-target candidates.
@@ -171,6 +197,13 @@ def search_offtargets(
         max_mismatches=max_mismatches,
         allow_bulge=allow_bulge,
         cas_variant=cas_variant,
+        backend=backend,
+        max_dna_bulge=max_dna_bulge,
+        max_rna_bulge=max_rna_bulge,
+        search_scope=search_scope,
+        chrom=chrom,
+        start=start,
+        end=end,
     )
     return offtarget_search(request)
 
@@ -307,6 +340,304 @@ def compute_gc_content(
     return _core_compute_gc(request)
 
 
+def check_homopolymer_runs(
+    sequence: str,
+    homopolymer_min_run: int = 4,
+    polyT_strict: bool = True,
+    polyG_strict: bool = False,
+    check_bases: str = "ACGT",
+    return_run_positions: bool = False,
+) -> VeyraResult:
+    """Check homopolymer runs in a DNA sequence.
+
+    Args:
+        sequence: DNA sequence (IUPAC characters allowed).
+        homopolymer_min_run: Minimum run length to flag (>= 2).
+        polyT_strict: If True, poly-T runs cause passes_filter=False.
+        polyG_strict: If True, poly-G runs cause passes_filter=False.
+        check_bases: Bases to scan for runs (subset of ACGT).
+        return_run_positions: If True, include run position details.
+
+    Returns:
+        VeyraResult with homopolymer analysis.
+    """
+    request = CheckHomopolymerRunsRequest(
+        sequence=sequence,
+        homopolymer_min_run=homopolymer_min_run,
+        polyT_strict=polyT_strict,
+        polyG_strict=polyG_strict,
+        check_bases=check_bases,
+        return_run_positions=return_run_positions,
+    )
+    return _core_check_homopolymer(request)
+
+
+def compute_melting_temp(
+    sequence: str,
+    tm_method: str = "nearest_neighbor",
+    na_conc: float = 50.0,
+    mg_conc: float = 0.0,
+    primer_conc: float = 250.0,
+    seed_region_length: int = 10,
+    compute_seed_tm: bool = False,
+    round_decimals: int = 2,
+) -> VeyraResult:
+    """Compute melting temperature for a DNA sequence.
+
+    Args:
+        sequence: DNA sequence (standard ACGT).
+        tm_method: "nearest_neighbor", "wallace", or "gc_percent".
+        na_conc: Na+ concentration in mM.
+        mg_conc: Mg2+ concentration in mM.
+        primer_conc: Primer concentration in nM.
+        seed_region_length: Length of seed region for seed Tm.
+        compute_seed_tm: Whether to compute Tm for the 3' seed region.
+        round_decimals: Decimal places for rounding.
+
+    Returns:
+        VeyraResult with melting temperature.
+    """
+    request = ComputeMeltingTempRequest(
+        sequence=sequence,
+        tm_method=tm_method,
+        na_conc=na_conc,
+        mg_conc=mg_conc,
+        primer_conc=primer_conc,
+        seed_region_length=seed_region_length,
+        compute_seed_tm=compute_seed_tm,
+        round_decimals=round_decimals,
+    )
+    return _core_compute_tm(request)
+
+
+def compute_secondary_structure(
+    sequence: str,
+    mfe_include_scaffold: bool = False,
+    scaffold_sequence: str = "",
+    temperature_celsius: float = 37.0,
+    return_structure_string: bool = False,
+    mfe_threshold: float = -5.0,
+) -> VeyraResult:
+    """Compute secondary structure / MFE for a DNA sequence.
+
+    Args:
+        sequence: DNA sequence (standard ACGT).
+        mfe_include_scaffold: If True, fold sequence + scaffold together.
+        scaffold_sequence: Scaffold RNA sequence (required when mfe_include_scaffold=True).
+        temperature_celsius: Folding temperature in °C.
+        return_structure_string: If True, include dot-bracket structure.
+        mfe_threshold: MFE threshold for pass/fail filter.
+
+    Returns:
+        VeyraResult with MFE and optional structure.
+    """
+    request = ComputeSecondaryStructureRequest(
+        sequence=sequence,
+        mfe_include_scaffold=mfe_include_scaffold,
+        scaffold_sequence=scaffold_sequence,
+        temperature_celsius=temperature_celsius,
+        return_structure_string=return_structure_string,
+        mfe_threshold=mfe_threshold,
+    )
+    return _core_compute_ss(request)
+
+
+def compute_positional_features(
+    sequence: str,
+    spacer_length: int = 20,
+    return_onehot: bool = True,
+    check_position20_bias: bool = True,
+    custom_check_positions: list[int] | None = None,
+    onehot_alphabet: str = "ACGT",
+) -> VeyraResult:
+    """Compute positional nucleotide features for a spacer sequence.
+
+    Args:
+        sequence: DNA sequence (already in scoring orientation).
+        spacer_length: Expected spacer length (default 20 for SpCas9).
+        return_onehot: Whether to include per-position one-hot encoding.
+        check_position20_bias: Whether to check position-20 PAM-proximal bias.
+        custom_check_positions: Optional list of 1-based positions to extract.
+        onehot_alphabet: Alphabet for one-hot encoding (default "ACGT").
+
+    Returns:
+        VeyraResult with positional features.
+    """
+    if custom_check_positions is None:
+        custom_check_positions = []
+    request = ComputePositionalFeaturesRequest(
+        sequence=sequence,
+        spacer_length=spacer_length,
+        return_onehot=return_onehot,
+        check_position20_bias=check_position20_bias,
+        custom_check_positions=custom_check_positions,
+        onehot_alphabet=onehot_alphabet,
+    )
+    return _core_compute_pf(request)
+
+
+def compute_dinucleotide_composition(
+    sequence: str,
+    spacer_length: int = 20,
+    window_size: int = 2,
+    return_full_matrix: bool = False,
+    normalize_counts: bool = False,
+    target_dinucleotides: list[str] | None = None,
+) -> VeyraResult:
+    """Compute dinucleotide composition for a spacer sequence.
+
+    Args:
+        sequence: DNA sequence (already in scoring orientation).
+        spacer_length: Expected spacer length (default 20 for SpCas9).
+        window_size: k-mer window size (default 2 for dinucleotides).
+        return_full_matrix: Whether to include per-position anchored rows.
+        normalize_counts: Whether to include normalized frequencies.
+        target_dinucleotides: Optional list of specific k-mers to report.
+
+    Returns:
+        VeyraResult with dinucleotide composition features.
+    """
+    if target_dinucleotides is None:
+        target_dinucleotides = []
+    request = ComputeDinucleotideCompositionRequest(
+        sequence=sequence,
+        spacer_length=spacer_length,
+        window_size=window_size,
+        return_full_matrix=return_full_matrix,
+        normalize_counts=normalize_counts,
+        target_dinucleotides=target_dinucleotides,
+    )
+    return _core_compute_dinuc(request)
+
+
+def compute_seed_gc(
+    sequence: str,
+    seed_region_length: int = 10,
+    seed_anchor: str = "pam_proximal",
+    seed_min_threshold: float = 0.20,
+    seed_max_threshold: float = 0.80,
+    compute_seed_distal_delta: bool = False,
+    round_decimals: int = 3,
+) -> VeyraResult:
+    """Compute PAM-proximal seed GC content for a spacer sequence.
+
+    Args:
+        sequence: DNA sequence (already in scoring orientation).
+        seed_region_length: Length of the seed region (default 10).
+        seed_anchor: Anchor point for seed extraction ("pam_proximal").
+        seed_min_threshold: Minimum GC fraction for pass filter.
+        seed_max_threshold: Maximum GC fraction for pass filter.
+        compute_seed_distal_delta: Whether to compute distal GC and delta.
+        round_decimals: Decimal places for rounding output values.
+
+    Returns:
+        VeyraResult with seed GC features.
+    """
+    request = ComputeSeedGCRequest(
+        sequence=sequence,
+        seed_region_length=seed_region_length,
+        seed_anchor=seed_anchor,
+        seed_min_threshold=seed_min_threshold,
+        seed_max_threshold=seed_max_threshold,
+        compute_seed_distal_delta=compute_seed_distal_delta,
+        round_decimals=round_decimals,
+    )
+    return _core_compute_seed_gc(request)
+
+
+def analyze_mismatch_seed(
+    spacer_sequence: str,
+    candidate_sequence: str,
+    bulge_type: str = "X",
+    bulge_size: int = 0,
+    bulge_position: int | None = None,
+    aligned_guide: str | None = None,
+    aligned_candidate: str | None = None,
+    seed_region_length: int = 10,
+    pam_pattern: str = "NGG",
+) -> VeyraResult:
+    """Analyze mismatches and bulges in the seed region of an off-target candidate.
+
+    Args:
+        spacer_sequence: The wild-type guide/spacer sequence (20nt).
+        candidate_sequence: The candidate off-target sequence.
+        bulge_type: "X" (no bulge), "DNA", or "RNA".
+        bulge_size: Size of the bulge (0 for no bulge).
+        bulge_position: Position of the bulge in the alignment (0-based).
+        aligned_guide: Aligned guide sequence with gaps (from Cas-OFFinder).
+        aligned_candidate: Aligned candidate sequence with gaps (from Cas-OFFinder).
+        seed_region_length: Length of the seed region (default 10).
+        pam_pattern: PAM pattern for context.
+
+    Returns:
+        VeyraResult with seed analysis summary.
+    """
+    from mcp.tools.analyze_mismatch_seed import analyze_mismatch_seed as _mcp_analyze
+    result = _mcp_analyze(
+        spacer_sequence=spacer_sequence,
+        candidate_sequence=candidate_sequence,
+        bulge_type=bulge_type,
+        bulge_size=bulge_size,
+        bulge_position=bulge_position,
+        aligned_guide=aligned_guide,
+        aligned_candidate=aligned_candidate,
+        seed_region_length=seed_region_length,
+        pam_pattern=pam_pattern,
+    )
+    return VeyraResult(
+        tool=result.tool,
+        rows=[],
+        summary=result.summary,
+        errors=result.errors,
+        warnings=result.warnings,
+        metadata=result.metadata,
+    )
+
+
+def compute_cut_site(
+    spacer_start: int,
+    spacer_length: int = 20,
+    strand: str = "+",
+    pam_position: str = "3prime",
+    cut_offset_from_pam: int = -3,
+    return_genomic_coord: bool = True,
+    return_relative_coord: bool = True,
+    chrom: str = "",
+) -> VeyraResult:
+    """Compute canonical SpCas9 cleavage-site position.
+
+    Deterministic coordinate/geometry tool. Reports a predicted canonical
+    SpCas9 cleavage anchor — NOT cleavage efficiency, NOT repair outcome.
+
+    Args:
+        spacer_start: 0-based start coordinate of the protospacer.
+        spacer_length: Length of the protospacer (default 20).
+        strand: "+" or "-" indicating which strand the guide targets.
+        pam_position: PAM orientation (currently only "3prime" supported).
+        cut_offset_from_pam: Offset from PAM start to cleavage boundary.
+        return_genomic_coord: Whether to compute absolute genomic coordinate.
+        return_relative_coord: Whether to compute spacer-relative cut position.
+        chrom: Chromosome label (required when return_genomic_coord=True).
+
+    Returns:
+        VeyraResult with cut_site_genomic, cut_site_relative, and metadata.
+    """
+    from core.cut_site import compute_cut_site as _core_cut_site
+    from schemas.canonical import ComputeCutSiteRequest
+
+    request = ComputeCutSiteRequest(
+        spacer_start=spacer_start,
+        spacer_length=spacer_length,
+        strand=strand,
+        pam_position=pam_position,
+        cut_offset_from_pam=cut_offset_from_pam,
+        return_genomic_coord=return_genomic_coord,
+        return_relative_coord=return_relative_coord,
+        chrom=chrom,
+    )
+    return _core_cut_site(request)
+
+
 __all__ = [
     "ingest_file",
     "pam_scan_raw",
@@ -316,6 +647,14 @@ __all__ = [
     "score_offtargets_cfd",
     "rank_guides",
     "compute_gc_content",
+    "check_homopolymer_runs",
+    "compute_melting_temp",
+    "compute_secondary_structure",
+    "compute_positional_features",
+    "compute_dinucleotide_composition",
+    "compute_seed_gc",
+    "analyze_mismatch_seed",
+    "compute_cut_site",
     "get_genomes",
     "get_genome_info",
     "get_cache_info",

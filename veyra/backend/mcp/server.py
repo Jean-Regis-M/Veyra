@@ -22,6 +22,15 @@ from mcp.tools.offtarget_search import offtarget_search
 from mcp.tools.score_offtargets import score_offtargets
 from mcp.tools.rank_candidates import rank_candidates
 from mcp.tools.compute_gc_content import compute_gc_content
+from mcp.tools.check_homopolymer_runs import check_homopolymer_runs
+from mcp.tools.compute_melting_temp import compute_melting_temp
+from mcp.tools.compute_secondary_structure import compute_secondary_structure
+from mcp.tools.compute_positional_features import compute_positional_features
+from mcp.tools.compute_dinucleotide_composition import compute_dinucleotide_composition
+from mcp.tools.compute_seed_gc import compute_seed_gc
+from mcp.tools.cas_offinder_search import cas_offinder_search
+from mcp.tools.analyze_mismatch_seed import analyze_mismatch_seed
+from mcp.tools.compute_cut_site import compute_cut_site
 from mcp.schemas import PAMSiteRow
 
 # ---------------------------------------------------------------------------
@@ -68,6 +77,60 @@ TOOL_REGISTRY: dict[str, dict] = {
     "compute_gc_content": {
         "function": compute_gc_content,
         "description": "Compute GC content and optional sliding-window / 5'-3' split features for a DNA sequence",
+        "cost": "cheap / deterministic",
+        "tier": 1,
+    },
+    "check_homopolymer_runs": {
+        "function": check_homopolymer_runs,
+        "description": "Detect homopolymer runs (poly-T, poly-G, etc.) in a DNA sequence for SpCas9 guide filtering",
+        "cost": "cheap / deterministic",
+        "tier": 1,
+    },
+    "compute_melting_temp": {
+        "function": compute_melting_temp,
+        "description": "Compute estimated duplex melting temperature using nearest-neighbor, Wallace, or GC-percent methods",
+        "cost": "moderate / deterministic",
+        "tier": 1,
+    },
+    "compute_secondary_structure": {
+        "function": compute_secondary_structure,
+        "description": "Compute minimum free energy (MFE) and optional dot-bracket structure for a DNA sequence (requires ViennaRNA)",
+        "cost": "moderate / deterministic / optional dependency",
+        "tier": 1,
+    },
+    "compute_positional_features": {
+        "function": compute_positional_features,
+        "description": "Deterministic positional nucleotide-feature extractor for SpCas9 spacer sequences (1-based biological positions, one-hot encoding, position-20 bias)",
+        "cost": "cheap / deterministic",
+        "tier": 1,
+    },
+    "compute_dinucleotide_composition": {
+        "function": compute_dinucleotide_composition,
+        "description": "Deterministic dinucleotide/k-mer composition feature extractor for SpCas9 spacer sequences (position-anchored, configurable window size, target filtering)",
+        "cost": "cheap / deterministic",
+        "tier": 1,
+    },
+    "compute_seed_gc": {
+        "function": compute_seed_gc,
+        "description": "Deterministic PAM-proximal seed GC-content feature extractor for SpCas9 guide candidates (configurable seed length, thresholds, optional distal delta)",
+        "cost": "cheap / deterministic",
+        "tier": 1,
+    },
+    "cas_offinder_search": {
+        "function": cas_offinder_search,
+        "description": "Genome-wide off-target search with DNA/RNA bulge support using Cas-OFFinder 3.0.0 (CPU via POCL)",
+        "cost": "expensive / genome-scale / bulge-aware",
+        "tier": 2,
+    },
+    "analyze_mismatch_seed": {
+        "function": analyze_mismatch_seed,
+        "description": "Alignment-aware seed region mismatch/bulge analysis for off-target candidates",
+        "cost": "cheap / deterministic",
+        "tier": 1,
+    },
+    "compute_cut_site": {
+        "function": compute_cut_site,
+        "description": "Deterministic canonical SpCas9 cleavage-site position anchor (coordinate-only, strand-aware, not a cleavage-efficiency predictor)",
         "cost": "cheap / deterministic",
         "tier": 1,
     },

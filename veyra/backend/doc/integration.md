@@ -15,6 +15,7 @@ pip install biopython numpy fastapi uvicorn httpx pytest
 - numpy 1.26+
 - FastAPI (for HTTP API)
 - bwa, samtools (for off-target analysis)
+- Cas-OFFinder 3.0.0 (built from source, CPU-only via POCL)
 
 ## 2. Environment/Dependencies
 
@@ -25,6 +26,10 @@ pip install biopython numpy fastapi uvicorn httpx pytest
 | fastapi | 0.100+ | HTTP API |
 | uvicorn | 0.20+ | HTTP server |
 | pytest | 7.0+ | Testing |
+| bwa | 0.7.17 | Off-target search (BWA aln) |
+| samtools | 1.19.2 | FASTA indexing |
+| Cas-OFFinder | 3.0.0 | Bulge-aware off-target search |
+| POCL | 2.3+ | OpenCL CPU runtime |
 
 ## 3. Reference Configuration
 
@@ -33,7 +38,7 @@ Reference genomes are configured in `references/__init__.py`.
 **CFD Scoring Resources:**
 - Path: `/home/hrirake/Desktop/hck15/refrences/data/benchmarks/crisporPaper/CFD_Scoring/`
 - Files: `mismatch_score.pkl`, `pam_scores.pkl`
-- Status: NOT FOUND on this system
+- Status: Copied to `data/resources/crispor_cfd/`
 
 **Note:** `refrences.local/` is read-only reference data.
 

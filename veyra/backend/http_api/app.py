@@ -70,6 +70,13 @@ class OfftargetSearchRequestModel(BaseModel):
     max_mismatches: int = 4
     allow_bulge: bool = False
     cas_variant: str = "SpCas9"
+    backend: str = "bwa"
+    max_dna_bulge: int = 0
+    max_rna_bulge: int = 0
+    search_scope: str = "genome"
+    chrom: Optional[str] = None
+    start: Optional[int] = None
+    end: Optional[int] = None
 
 
 class ScoreOfftargetsRequestModel(BaseModel):
@@ -98,6 +105,86 @@ class ComputeGCContentRequestModel(BaseModel):
     include_sliding_window: bool = True
     include_half_split: bool = True
     round_decimals: int = 3
+
+
+class CheckHomopolymerRunsRequestModel(BaseModel):
+    sequence: str
+    homopolymer_min_run: int = 4
+    polyT_strict: bool = True
+    polyG_strict: bool = False
+    check_bases: str = "ACGT"
+    return_run_positions: bool = False
+
+
+class ComputeMeltingTempRequestModel(BaseModel):
+    sequence: str
+    tm_method: str = "nearest_neighbor"
+    na_conc: float = 50.0
+    mg_conc: float = 0.0
+    primer_conc: float = 250.0
+    seed_region_length: int = 10
+    compute_seed_tm: bool = False
+    round_decimals: int = 2
+
+
+class ComputeSecondaryStructureRequestModel(BaseModel):
+    sequence: str
+    mfe_include_scaffold: bool = False
+    scaffold_sequence: str = ""
+    temperature_celsius: float = 37.0
+    return_structure_string: bool = False
+    mfe_threshold: float = -5.0
+
+
+class ComputePositionalFeaturesRequestModel(BaseModel):
+    sequence: str
+    spacer_length: int = 20
+    return_onehot: bool = True
+    check_position20_bias: bool = True
+    custom_check_positions: list[int] = []
+    onehot_alphabet: str = "ACGT"
+
+
+class ComputeDinucleotideCompositionRequestModel(BaseModel):
+    sequence: str
+    spacer_length: int = 20
+    window_size: int = 2
+    return_full_matrix: bool = False
+    normalize_counts: bool = False
+    target_dinucleotides: list[str] = []
+
+
+class ComputeSeedGCRequestModel(BaseModel):
+    sequence: str
+    seed_region_length: int = 10
+    seed_anchor: str = "pam_proximal"
+    seed_min_threshold: float = 0.20
+    seed_max_threshold: float = 0.80
+    compute_seed_distal_delta: bool = False
+    round_decimals: int = 3
+
+
+class AnalyzeMismatchSeedRequestModel(BaseModel):
+    spacer_sequence: str
+    candidate_sequence: str
+    bulge_type: str = "X"
+    bulge_size: int = 0
+    bulge_position: Optional[int] = None
+    aligned_guide: Optional[str] = None
+    aligned_candidate: Optional[str] = None
+    seed_region_length: int = 10
+    pam_pattern: str = "NGG"
+
+
+class ComputeCutSiteRequestModel(BaseModel):
+    spacer_start: int
+    spacer_length: int = 20
+    strand: str = "+"
+    pam_position: str = "3prime"
+    cut_offset_from_pam: int = -3
+    return_genomic_coord: bool = True
+    return_relative_coord: bool = True
+    chrom: str = ""
 
 
 def _result_to_response(result) -> dict:
@@ -209,6 +296,13 @@ async def offtarget_search(request: OfftargetSearchRequestModel):
         max_mismatches=request.max_mismatches,
         allow_bulge=request.allow_bulge,
         cas_variant=request.cas_variant,
+        backend=request.backend,
+        max_dna_bulge=request.max_dna_bulge,
+        max_rna_bulge=request.max_rna_bulge,
+        search_scope=request.search_scope,
+        chrom=request.chrom,
+        start=request.start,
+        end=request.end,
     )
     result = offtarget_search(req)
     if result.errors:
@@ -322,6 +416,180 @@ async def compute_gc_content(request: ComputeGCContentRequestModel):
         round_decimals=request.round_decimals,
     )
     result = compute_gc_content(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/sequence/homopolymer")
+async def check_homopolymer_runs(request: CheckHomopolymerRunsRequestModel):
+    """Check homopolymer runs in a DNA sequence."""
+    from core.homopolymer import check_homopolymer_runs
+    from schemas.canonical import CheckHomopolymerRunsRequest
+
+    req = CheckHomopolymerRunsRequest(
+        sequence=request.sequence,
+        homopolymer_min_run=request.homopolymer_min_run,
+        polyT_strict=request.polyT_strict,
+        polyG_strict=request.polyG_strict,
+        check_bases=request.check_bases,
+        return_run_positions=request.return_run_positions,
+    )
+    result = check_homopolymer_runs(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/sequence/tm")
+async def compute_melting_temp(request: ComputeMeltingTempRequestModel):
+    """Compute melting temperature for a DNA sequence."""
+    from core.tm import compute_melting_temp
+    from schemas.canonical import ComputeMeltingTempRequest
+
+    req = ComputeMeltingTempRequest(
+        sequence=request.sequence,
+        tm_method=request.tm_method,
+        na_conc=request.na_conc,
+        mg_conc=request.mg_conc,
+        primer_conc=request.primer_conc,
+        seed_region_length=request.seed_region_length,
+        compute_seed_tm=request.compute_seed_tm,
+        round_decimals=request.round_decimals,
+    )
+    result = compute_melting_temp(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/sequence/secondary-structure")
+async def compute_secondary_structure(request: ComputeSecondaryStructureRequestModel):
+    """Compute secondary structure / MFE for a DNA sequence."""
+    from core.ss import compute_secondary_structure
+    from schemas.canonical import ComputeSecondaryStructureRequest
+
+    req = ComputeSecondaryStructureRequest(
+        sequence=request.sequence,
+        mfe_include_scaffold=request.mfe_include_scaffold,
+        scaffold_sequence=request.scaffold_sequence,
+        temperature_celsius=request.temperature_celsius,
+        return_structure_string=request.return_structure_string,
+        mfe_threshold=request.mfe_threshold,
+    )
+    result = compute_secondary_structure(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/sequence/positional-features")
+async def compute_positional_features(request: ComputePositionalFeaturesRequestModel):
+    """Compute positional nucleotide features for a spacer sequence."""
+    from core.positional_features import compute_positional_features
+    from schemas.canonical import ComputePositionalFeaturesRequest
+
+    req = ComputePositionalFeaturesRequest(
+        sequence=request.sequence,
+        spacer_length=request.spacer_length,
+        return_onehot=request.return_onehot,
+        check_position20_bias=request.check_position20_bias,
+        custom_check_positions=request.custom_check_positions,
+        onehot_alphabet=request.onehot_alphabet,
+    )
+    result = compute_positional_features(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/sequence/dinucleotide-composition")
+async def compute_dinucleotide_composition(request: ComputeDinucleotideCompositionRequestModel):
+    """Compute dinucleotide composition for a spacer sequence."""
+    from core.dinucleotide import compute_dinucleotide_composition
+    from schemas.canonical import ComputeDinucleotideCompositionRequest
+
+    req = ComputeDinucleotideCompositionRequest(
+        sequence=request.sequence,
+        spacer_length=request.spacer_length,
+        window_size=request.window_size,
+        return_full_matrix=request.return_full_matrix,
+        normalize_counts=request.normalize_counts,
+        target_dinucleotides=request.target_dinucleotides,
+    )
+    result = compute_dinucleotide_composition(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/sequence/seed-gc")
+async def compute_seed_gc(request: ComputeSeedGCRequestModel):
+    """Compute PAM-proximal seed GC content for a spacer sequence."""
+    from core.seed_gc import compute_seed_gc
+    from schemas.canonical import ComputeSeedGCRequest
+
+    req = ComputeSeedGCRequest(
+        sequence=request.sequence,
+        seed_region_length=request.seed_region_length,
+        seed_anchor=request.seed_anchor,
+        seed_min_threshold=request.seed_min_threshold,
+        seed_max_threshold=request.seed_max_threshold,
+        compute_seed_distal_delta=request.compute_seed_distal_delta,
+        round_decimals=request.round_decimals,
+    )
+    result = compute_seed_gc(req)
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return _result_to_response(result)
+
+
+@app.post("/offtarget/analyze-seed")
+async def analyze_mismatch_seed(request: AnalyzeMismatchSeedRequestModel):
+    """Analyze mismatches and bulges in the seed region of an off-target candidate."""
+    from mcp.tools.analyze_mismatch_seed import analyze_mismatch_seed as _analyze
+    from schemas.canonical import VeyraResult
+
+    result = _analyze(
+        spacer_sequence=request.spacer_sequence,
+        candidate_sequence=request.candidate_sequence,
+        bulge_type=request.bulge_type,
+        bulge_size=request.bulge_size,
+        bulge_position=request.bulge_position,
+        aligned_guide=request.aligned_guide,
+        aligned_candidate=request.aligned_candidate,
+        seed_region_length=request.seed_region_length,
+        pam_pattern=request.pam_pattern,
+    )
+    if result.errors:
+        raise HTTPException(status_code=400, detail={"errors": result.errors})
+    return {
+        "tool": result.tool,
+        "rows": [],
+        "summary": result.summary,
+        "errors": result.errors,
+        "warnings": result.warnings,
+        "metadata": result.metadata,
+    }
+
+
+@app.post("/sequence/cut-site")
+async def compute_cut_site(request: ComputeCutSiteRequestModel):
+    """Compute canonical SpCas9 cleavage-site position (deterministic coordinate/geometry)."""
+    from core.cut_site import compute_cut_site
+    from schemas.canonical import ComputeCutSiteRequest
+
+    req = ComputeCutSiteRequest(
+        spacer_start=request.spacer_start,
+        spacer_length=request.spacer_length,
+        strand=request.strand,
+        pam_position=request.pam_position,
+        cut_offset_from_pam=request.cut_offset_from_pam,
+        return_genomic_coord=request.return_genomic_coord,
+        return_relative_coord=request.return_relative_coord,
+        chrom=request.chrom,
+    )
+    result = compute_cut_site(req)
     if result.errors:
         raise HTTPException(status_code=400, detail={"errors": result.errors})
     return _result_to_response(result)
