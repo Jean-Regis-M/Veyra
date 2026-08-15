@@ -7,6 +7,7 @@ from typing import Any
 import json
 import re
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -122,6 +123,14 @@ class SkillExecutionBody(BaseModel):
 
 
 app = FastAPI(title="VEYRA MIDEND", version="0.1.0")
+
+# Frontend (Next.js dev server) calls this API directly from the browser.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 async def _read_request_body_bounded(request: Request, limit: int) -> bytes:

@@ -51,3 +51,5 @@ refrences.local/
 
 # Cache database
 backend/cache/*.db
+
+.env

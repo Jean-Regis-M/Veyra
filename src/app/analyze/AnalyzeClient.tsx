@@ -13,6 +13,8 @@ import {
   CfdScoreResult,
   computeMeltingTemp,
   HomopolymerResult,
+  IngestedRecord,
+  ingestFile,
   MeltingTempResult,
   OnTargetScoreResult,
   scoreOffTargetsCFD,
@@ -71,6 +73,27 @@ export default function AnalyzeClient() {
   const [offTargetCfd, setOffTargetCfd] = useState<BackendCallResult<CfdScoreResult> | null>(null);
   const [tm, setTm] = useState<BackendCallResult<MeltingTempResult> | null>(null);
   const [homopolymer, setHomopolymer] = useState<BackendCallResult<HomopolymerResult> | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadedRecords, setUploadedRecords] = useState<IngestedRecord[] | null>(null);
+
+  async function handleFileUpload(file: File) {
+    setUploading(true);
+    setUploadError(null);
+    setUploadedRecords(null);
+    const result = await ingestFile(file);
+    setUploading(false);
+    if (!result.ok) {
+      setUploadError(result.error);
+      return;
+    }
+    if (result.data.length === 1) {
+      setSequence(result.data[0].sequence);
+      runAnalysis(result.data[0].sequence);
+    } else {
+      setUploadedRecords(result.data);
+    }
+  }
 
   function runAnalysis(input: string) {
     try {
@@ -251,7 +274,44 @@ export default function AnalyzeClient() {
                     {ex.label}
                   </button>
                 ))}
+                <label className="rounded-full border border-border px-4 py-2.5 text-xs text-muted hover:border-primary/40 hover:text-foreground transition-colors cursor-pointer">
+                  {uploading ? "Parsing…" : "Upload FASTA / FASTQ / GenBank"}
+                  <input
+                    type="file"
+                    accept=".fa,.fasta,.fna,.faa,.fq,.fastq,.gb,.gbk,.gbff,.genbank"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) void handleFileUpload(file);
+                    }}
+                  />
+                </label>
               </div>
+              {uploadError && <p className="text-sm text-risk-high">{uploadError}</p>}
+              {uploadedRecords && (
+                <div className="space-y-1.5">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                    {uploadedRecords.length} records — pick one
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {uploadedRecords.map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={() => {
+                          setSequence(r.sequence);
+                          setUploadedRecords(null);
+                          runAnalysis(r.sequence);
+                        }}
+                        className="rounded-full border border-border px-3 py-1.5 text-xs text-muted hover:border-primary/40 hover:text-foreground transition-colors"
+                        title={r.description}
+                      >
+                        {r.id || r.accession || "record"} ({r.length}bp)
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {result && (

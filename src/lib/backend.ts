@@ -255,6 +255,46 @@ export async function checkHomopolymerRuns(sequence: string): Promise<BackendCal
   }
 }
 
+export interface IngestedRecord {
+  id: string;
+  sequence: string;
+  length: number;
+  description: string;
+  accession: string | null;
+}
+
+/** Uploads a FASTA/FASTQ/GenBank file through the Next.js /api/ingest bridge,
+ * which calls the backend's real parsers (backend has no direct multipart
+ * upload endpoint — only a server-side file path). Returns every parsed
+ * record verbatim; never fabricates a sequence. */
+export async function ingestFile(file: File): Promise<BackendCallResult<IngestedRecord[]>> {
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/ingest", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: String(body?.error ?? `HTTP ${res.status}`) };
+    }
+    const rows = (body.rows ?? []) as Record<string, unknown>[];
+    if (rows.length === 0) {
+      return { ok: false, error: "No records found in file." };
+    }
+    return {
+      ok: true,
+      data: rows.map((r) => ({
+        id: String(r.id ?? ""),
+        sequence: String(r.sequence ?? ""),
+        length: Number(r.length ?? 0),
+        description: String(r.description ?? ""),
+        accession: (r.accession as string | null) ?? null,
+      })),
+    };
+  } catch {
+    return { ok: false, error: "Upload failed." };
+  }
+}
+
 /** Generic passthrough to any backend HTTP route — the raw-access escape
  * hatch. Returns the exact response body (success or error) verbatim; never
  * reshapes or invents fields, since this is meant to expose the real

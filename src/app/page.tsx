@@ -66,6 +66,7 @@ export default function Home() {
             <a href="#pipeline" className="hover:text-foreground transition-colors">Pipeline</a>
             <a href="#features" className="hover:text-foreground transition-colors">Approach</a>
             <Link href="/raw" className="hover:text-foreground transition-colors">Raw backend</Link>
+            <Link href="/midend" className="hover:text-foreground transition-colors">MIDEND</Link>
           </nav>
           <Link
             href="/analyze"
