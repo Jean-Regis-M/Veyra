@@ -30,6 +30,12 @@ class PAMSiteRow:
     mismatch_positions: str | None = None  # comma-separated 0-based positions
     cfd_score: float | None = None
     rs2_score: float | None = None
+    bulge_type: str | None = None  # "X", "DNA", or "RNA"
+    bulge_size: int | None = None
+    bulge_position: int | None = None
+    aligned_guide: str | None = None  # aligned guide with gaps
+    aligned_candidate: str | None = None  # aligned candidate with gaps
+    cfd_status: str | None = None  # "unsupported_bulge" for bulged candidates
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

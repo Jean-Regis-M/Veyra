@@ -1,7 +1,7 @@
 """MCP Tool: offtarget_search
 
 Search a genome for approximate matches to a guide/spacer sequence.
-Uses BWA for mismatch-tolerant alignment.
+Uses BWA for mismatch-tolerant alignment or Cas-OFFinder for bulge-aware search.
 
 Tier 2 — INDEXED / APPROXIMATE
 
@@ -30,23 +30,38 @@ def offtarget_search(
     max_mismatches: int = 4,
     allow_bulge: bool = False,
     cas_variant: str = "SpCas9",
+    backend: str = "bwa",
+    max_dna_bulge: int = 0,
+    max_rna_bulge: int = 0,
+    search_scope: str = "genome",
+    chrom: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
 ) -> ToolResult:
     """Search a genome for approximate off-target matches to a spacer.
 
-    Uses BWA aln with mismatch tolerance to find candidate off-target loci.
-    BWA aln supports up to ~4-5 mismatches efficiently via the -n parameter.
+    Uses BWA aln with mismatch tolerance or Cas-OFFinder for bulge-aware search.
 
-    NOTE: BWA does not exactly reproduce CRISPOR/Cas-OFFinder semantics.
-    BWA uses quality-weighted mismatches and seed-based heuristics.
-    Results are approximate candidates that should be validated.
+    Backend options:
+    - "bwa": Mismatch-only search using BWA aln. Fast but no bulge support.
+    - "cas_offinder": DNA/RNA bulge-aware search using Cas-OFFinder 3.0.0.
+
+    When allow_bulge=True, the cas_offinder backend is used automatically.
 
     Args:
-        spacer_sequence: The 20nt guide/spacer sequence to search for.
+        spacer_sequence: The guide/spacer sequence to search for.
         genome_id: Registered genome identifier.
         pam_pattern: IUPAC PAM pattern.
-        max_mismatches: Maximum mismatches allowed (BWA aln -n parameter).
-        allow_bulge: Not yet implemented (BWA aln does not support bulges).
+        max_mismatches: Maximum mismatches allowed.
+        allow_bulge: If True, use cas_offinder backend with bulge support.
         cas_variant: Cas variant name (used for PAM context in output).
+        backend: "bwa" or "cas_offinder". Ignored when allow_bulge=True.
+        max_dna_bulge: Maximum DNA bulge size (cas_offinder only).
+        max_rna_bulge: Maximum RNA bulge size (cas_offinder only).
+        search_scope: "genome" or "region" (cas_offinder only).
+        chrom: Chromosome name (required when search_scope="region").
+        start: Start position, 1-based (required when search_scope="region").
+        end: End position, exclusive (required when search_scope="region").
 
     Returns:
         ToolResult with off-target candidate rows.
@@ -54,8 +69,30 @@ def offtarget_search(
     errors: list[str] = []
     warnings: list[str] = []
 
+    # Route to cas_offinder if bulges requested
+    if allow_bulge or backend == "cas_offinder":
+        from mcp.tools.cas_offinder_search import cas_offinder_search
+
+        if backend == "bwa" and allow_bulge:
+            warnings.append("allow_bulge=True requires cas_offinder backend. Using cas_offinder.")
+
+        return cas_offinder_search(
+            spacer_sequence=spacer_sequence,
+            genome_id=genome_id,
+            pam_pattern=pam_pattern,
+            max_mismatches=max_mismatches,
+            max_dna_bulge=max_dna_bulge if allow_bulge else 0,
+            max_rna_bulge=max_rna_bulge if allow_bulge else 0,
+            search_scope=search_scope,
+            chrom=chrom,
+            start=start,
+            end=end,
+            cas_variant=cas_variant,
+        )
+
+    # BWA backend (mismatch-only)
     if allow_bulge:
-        warnings.append("Bulge detection not supported by BWA backend. Ignoring allow_bulge.")
+        warnings.append("Bulge detection not supported by BWA backend. Using cas_offinder.")
 
     # Validate inputs
     try:

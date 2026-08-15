@@ -42,6 +42,12 @@ def _convert_tool_result(tool_result) -> VeyraResult:
                 mismatch_positions=r.mismatch_positions,
                 cfd_score=r.cfd_score,
                 rs2_score=r.rs2_score,
+                bulge_type=r.bulge_type,
+                bulge_size=r.bulge_size,
+                bulge_position=r.bulge_position,
+                aligned_guide=r.aligned_guide,
+                aligned_candidate=r.aligned_candidate,
+                cfd_status=r.cfd_status,
             )
             for r in tool_result.rows
         ],
@@ -85,6 +91,13 @@ def offtarget_search(request: OfftargetSearchRequest) -> VeyraResult:
         max_mismatches=request.max_mismatches,
         allow_bulge=request.allow_bulge,
         cas_variant=request.cas_variant,
+        backend=request.backend,
+        max_dna_bulge=request.max_dna_bulge,
+        max_rna_bulge=request.max_rna_bulge,
+        search_scope=request.search_scope,
+        chrom=request.chrom,
+        start=request.start,
+        end=request.end,
     )
     return _convert_tool_result(result)
 
