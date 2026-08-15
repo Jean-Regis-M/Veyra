@@ -176,6 +176,10 @@ result = cas_offinder_search(
 - **Build**: CPU-only via POCL (AMD Ryzen 5 5600G)
 - **Commit**: 0a9ac00
 
+VEYRA sets `POCL_CACHE_DIR` to the project-local `backend/cache/pocl/` when
+launching the engine. This avoids failures caused by stale or unwritable
+user-level POCL kernel caches.
+
 ## Testing
 
 Run Cas-OFFinder-specific tests:

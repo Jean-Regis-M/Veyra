@@ -1,5 +1,21 @@
 # VEYRA Project Status
 
+## Gap-filling update — 2026-08-15
+
+The post-audit repair pass is complete. The full project suite now reports
+**402 passed, 6 skipped**. Real E. coli BWA and Cas-OFFinder mismatch,
+DNA-bulge, RNA-bulge, and regional workflows pass. The previous Cas-OFFinder
+failure was caused by POCL's stale user cache; VEYRA now uses
+`backend/cache/pocl/` automatically. HTTP parity tests pass through an
+ASGI-compatible transport facade, and `python -m mcp.server` works from the
+repository root through the compatibility package.
+
+Rule Set 3 is now **VERIFIED** in the current main environment after handling
+LightGBM's missing regressor `_n_classes` attribute. Its native activity score
+is intentionally not represented as a 0–1 probability. Rule Set 2 remains
+**UNVERIFIED/INCOMPATIBLE** because of its legacy sklearn pickle dependency.
+The authoritative details are in `backend/FINAL_COMPLETE_REPORT.md`.
+
 ## Verification Metadata
 
 - **Verification Date:** 2026-08-15
@@ -23,15 +39,15 @@
 | MCP Tools | COMPLETE | 21 tools registered (4 model runtime + 13 existing) | 170/170 | 6 skipped (fixture deps); +20 model runtime tests |
 | Interface Parity | COMPLETE | 61 tests pass | 61/61 | None |
 | CLI | COMPLETE | Verified | - | Legacy CLI preserved |
-| HTTP API | COMPLETE | 16 endpoints verified | - | Deprecation warning |
+| HTTP API | COMPLETE | 16 endpoints + ASGI parity verified | - | Deprecation warning |
 | Python API | COMPLETE | 17 functions verified | - | None |
-| Off-target Pipeline | COMPLETE | E. coli E2E verified | - | None |
+| Off-target Pipeline | COMPLETE | E. coli BWA/Cas-OFFinder E2E verified | - | CPU-only Cas-OFFinder |
 | CFD Scoring | COMPLETE | CRISPOR resources loaded, E2E verified | 4/4 run | None |
 | Sequence Properties | COMPLETE | All sequence features implemented | 87/87 | None |
 | Documentation | COMPLETE | 19 files updated | - | None |
 | Cas-OFFinder Integration | COMPLETE | Bulge-aware search implemented | 26/26 | CPU-only mode |
 | Black-Box Verification | COMPLETE | All 4 interfaces verified | 10/10 PASS | Real engine execution |
-| On-Target Efficiency | COMPLETE | Auto-fallback + auto-provisioning model registry; Doench 2014 verified; isolated runtime provisioning for Rule Set 2/3; transparent reporting | 38/38 | Rule Set 2/3 need isolated runtimes (sklearn 0.16.1 / lightgbm 3.x); Doench 2014 always available |
+| On-Target Efficiency | COMPLETE | Rule Set 3 verified with LightGBM compatibility shim; Doench 2014 verified; explicit runtime management; transparent reporting | 38/38 | Rule Set 2 needs trusted legacy sklearn runtime; Rule Set 3 native score is not 0–1 |
 
 ## Detailed Subsystem Tables
 
@@ -74,7 +90,7 @@
 | Component | Status | Implementation | Test | Model Source | Caveats |
 |-----------|--------|----------------|------|--------------|---------|
 | Rule Set 2 (Doench 2016) | INCOMPATIBLE (isolated runtime available) | core/ontarget.py + core/model_runtime.py + core/model_registry.py | 38/38 | sklearn <=0.16.1 needed; isolated runtime can be provisioned via `models setup rule_set_2` |
-| Rule Set 3 (Doench 2021) | INCOMPATIBLE (isolated runtime available) | core/ontarget.py + core/model_runtime.py + core/model_registry.py | 38/38 | rs3/lightgbm 4.7.0 conflict; isolated runtime with lightgbm==3.3.5 can be provisioned |
+| Rule Set 3 (Doench 2021) | VERIFIED | core/ontarget.py + core/model_registry.py | 38/38 | rs3/lightgbm compatibility shim; native activity scale |
 | Doench 2014 (fallback) | COMPLETE | core/ontarget.py | 38/38 | Pure Python, always available, no isolated runtime needed |
 | Model Registry | COMPLETE | core/model_registry.py | 38/38 | Runtime states, auto-fallback with transparent reporting |
 | Model Runtime Manager | COMPLETE | core/model_runtime.py | 38/38 | Isolated venvs, provisioning, verification, locking |
@@ -170,12 +186,12 @@ Warnings: 7
 5. **Seed anchor** — Only `pam_proximal` anchor currently supported
 6. **CPU-only Cas-OFFinder** — Slower than GPU-accelerated mode
 7. **Rule Set 2 (Azimuth)**: Incompatible in main env — sklearn ≤0.16.1 needed but Python 3.12 requires sklearn 1.9+; isolated runtime provisioning available via `models setup rule_set_2`; auto-falls back to Doench 2014 with transparent reporting; explicit `model="rule_set_2"` returns error
-8. **Rule Set 3 (Doench 2021)**: Incompatible in main env — rs3/lightgbm 4.7.0 runtime error; isolated runtime provisioning available via `models setup rule_set_3` with lightgbm==3.3.5; explicit `model="rule_set_3"` returns error in main env
+8. **Rule Set 3 (Doench 2021)**: Verified in main env with an `_n_classes=0` LightGBM compatibility shim; native activity scores are not probabilities in `[0,1]`
 9. **Model provisioning in isolated runtimes**: Requires compatible Python versions (3.8 for legacy sklearn/lightgbm); if unavailable, provisioning may fail
 
 ## Next Recommended Work
 
-1. **Provision isolated runtimes** — `veyra models setup rule_set_2` / `rule_set_3` (requires Python 3.8)
+1. **Provision isolated runtime** — `veyra models setup rule_set_2` (requires a trusted legacy Python/sklearn environment)
 2. **Add more E2E tests** — Test full pipeline with real genomes
 3. **Implement GPU-accelerated Cas-OFFinder** — When OpenCL GPU runtime available
 
@@ -227,3 +243,25 @@ Warnings: 7
 - `backend/core/offtarget.py` — Updated with new params
 - `backend/core/ontarget.py` — New on-target efficiency core service with model selection
 - `veyra/Status.md` — This file
+# Final Codex audit update — 2026-08-15
+
+The authoritative deep-audit record is `backend/FINAL_COMPLETE_REPORT.md`.
+The project suite collected 408 tests. The final backend run passed **402
+tests with 6 skips**. The unrestricted repository run must not be used as the
+VEYRA baseline because pytest also collects legacy tests under the protected
+`refrences.local/` tree; that collection produced 12 dependency/syntax errors.
+
+Verified during this audit: FASTA/FASTQ/GenBank ingestion, deterministic
+sequence features, PAM scanning, canonical cut-site geometry, CFD exact-match
+score (1.0), real BWA/Cas-OFFinder searches, Rule Set 3 native prediction,
+Python/core/CLI/HTTP/MCP paths, and the 21-tool MCP registry.
+
+Fixed during this audit: the broken `python -m backend` entrypoint; implicit
+model-runtime provisioning from prediction requests; Cas-OFFinder forwarding
+and reporting of strand/max-results controls; BWA region validation/filtering
+and provenance metadata; suppression of third-party model-discovery progress
+output; and regression coverage for these interface boundaries.
+
+Not verified: Rule Set 2 legacy-model execution in a trusted isolated runtime.
+No claims of
+completion are made for those components.
