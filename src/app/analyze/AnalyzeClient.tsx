@@ -9,7 +9,11 @@ import {
   BackendCallResult,
   buildOnTargetContext,
   checkBackendHealth,
+  checkHomopolymerRuns,
   CfdScoreResult,
+  computeMeltingTemp,
+  HomopolymerResult,
+  MeltingTempResult,
   OnTargetScoreResult,
   scoreOffTargetsCFD,
   scoreOnTarget,
@@ -21,6 +25,15 @@ function riskBucket(cfd: number): "high" | "moderate" | "low" {
   if (cfd >= 0.5) return "high";
   if (cfd >= 0.1) return "moderate";
   return "low";
+}
+
+// Interpolating hue directly (not RGB-lerping two hex colors) — an RGB lerp
+// between green and pink desaturates through a muddy gray at the midpoint,
+// which is exactly what read as "just light and dark" for balanced-GC
+// sequences. Fixed saturation/lightness keeps every GC% visibly distinct.
+function gcToColor(gc: number): string {
+  const hue = 160 + gc * 160; // 160° teal-green (low GC) -> 320° magenta (high GC)
+  return `hsl(${hue.toFixed(0)}, 70%, 55%)`;
 }
 
 interface ReasonResponse {
@@ -56,6 +69,8 @@ export default function AnalyzeClient() {
   const [onTarget, setOnTarget] = useState<BackendCallResult<OnTargetScoreResult> | null>(null);
   const [offTargetCfdLoading, setOffTargetCfdLoading] = useState(false);
   const [offTargetCfd, setOffTargetCfd] = useState<BackendCallResult<CfdScoreResult> | null>(null);
+  const [tm, setTm] = useState<BackendCallResult<MeltingTempResult> | null>(null);
+  const [homopolymer, setHomopolymer] = useState<BackendCallResult<HomopolymerResult> | null>(null);
 
   function runAnalysis(input: string) {
     try {
@@ -92,6 +107,17 @@ export default function AnalyzeClient() {
     () => result?.candidates.find((c) => c.id === selectedId) ?? null,
     [result, selectedId]
   );
+
+  // The shared DNA model's own material tint, driven by the pasted
+  // sequence's GC content — 0% GC renders green, 100% GC renders pink,
+  // interpolated between. Neutral (landing's default) until a result exists.
+  const tintColor = useMemo(() => {
+    if (!result) return "#eef3ee";
+    const normalized = sequence.trim().toUpperCase().replace(/[^ACGT]/g, "");
+    if (normalized.length === 0) return "#eef3ee";
+    const gc = normalized.split("").filter((b) => b === "G" || b === "C").length / normalized.length;
+    return gcToColor(gc);
+  }, [result, sequence]);
 
   useEffect(() => {
     void checkBackendHealth().then(setBackendOnline);
@@ -142,6 +168,24 @@ export default function AnalyzeClient() {
         setOffTargetCfd(r);
         setOffTargetCfdLoading(false);
       }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, backendOnline]);
+
+  useEffect(() => {
+    if (!selected || !backendOnline) {
+      setTm(null);
+      setHomopolymer(null);
+      return;
+    }
+    let cancelled = false;
+    computeMeltingTemp(selected.sequence).then((r) => {
+      if (!cancelled) setTm(r);
+    });
+    checkHomopolymerRuns(selected.sequence).then((r) => {
+      if (!cancelled) setHomopolymer(r);
     });
     return () => {
       cancelled = true;
@@ -245,7 +289,7 @@ export default function AnalyzeClient() {
 
           <div className="lg:col-span-3 space-y-4">
             <div className="relative h-[340px]">
-              <DnaHelixModel className="h-full w-full" />
+              <DnaHelixModel className="h-full w-full" tintColor={tintColor} />
             </div>
 
             {selected && (
@@ -321,6 +365,37 @@ export default function AnalyzeClient() {
                     )}
                   </>
                 )}
+              </div>
+            )}
+
+            {selected && backendOnline && (
+              <div className="veyra-glass p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                    Sequence QC · backend
+                  </span>
+                  <SourceTag source="Engine" />
+                </div>
+                <dl className="veyra-readout grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <dt className="text-muted text-xs">Melting temp (Tm)</dt>
+                    <dd className="text-foreground font-mono">
+                      {tm?.ok ? `${tm.data.tmCelsius.toFixed(1)}°C` : tm && !tm.ok ? "—" : "…"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted text-xs">Homopolymer runs</dt>
+                    <dd className="text-foreground font-mono">
+                      {homopolymer?.ok
+                        ? homopolymer.data.maxRun > 0
+                          ? `max ${homopolymer.data.maxRun}nt${homopolymer.data.passesFilter ? "" : " ⚠"}`
+                          : "none"
+                        : homopolymer && !homopolymer.ok
+                          ? "—"
+                          : "…"}
+                    </dd>
+                  </div>
+                </dl>
               </div>
             )}
 

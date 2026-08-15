@@ -116,9 +116,10 @@ interface ModelProps {
   autoRotate: boolean;
   activeId: string | null;
   onSelect: (id: string | null) => void;
+  tintColor: string;
 }
 
-function Model({ autoRotate, activeId, onSelect }: ModelProps) {
+function Model({ autoRotate, activeId, onSelect, tintColor }: ModelProps) {
   const { scene } = useGLTF(MODEL_URL);
   const ref = useRef<THREE.Group>(null);
 
@@ -167,12 +168,19 @@ function Model({ autoRotate, activeId, onSelect }: ModelProps) {
     // (no reflections to light the metal/roughness response) — cap metalness
     // and lift the color multiplier so it stays legible as a lab specimen
     // against the dark clinical backdrop instead of going fully black.
+    //
+    // The whole model (strands + every rung) is one fused mesh with colors
+    // baked into a diffuse texture, not per-object materials or vertex
+    // colors — confirmed by inspection (single MeshStandardMaterial,
+    // 51k-vertex mesh, no color attribute). That rules out recoloring
+    // individual rungs; tinting is necessarily whole-model.
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
-        const mat = child.material;
+        const mat = child.material.clone();
+        child.material = mat;
         mat.metalness = Math.min(mat.metalness, 0.2);
         mat.roughness = Math.max(mat.roughness, 0.55);
-        mat.color.lerp(new THREE.Color("#eef3ee"), 0.4);
+        mat.color.lerp(new THREE.Color(tintColor), 0.4);
       }
     });
 
@@ -185,7 +193,7 @@ function Model({ autoRotate, activeId, onSelect }: ModelProps) {
       : [];
 
     return { object: clone, hotspots: resolvedHotspots };
-  }, [scene]);
+  }, [scene, tintColor]);
 
   useFrame((_, delta) => {
     if (autoRotate && ref.current) ref.current.rotation.y += delta * 0.2;
@@ -227,9 +235,19 @@ interface DnaHelixModelProps {
   autoRotate?: boolean;
   interactive?: boolean;
   className?: string;
+  /** Recolors the model's own material — e.g. driven by a sequence's GC
+   * content — instead of the fixed default. Whole-model only: the source
+   * asset is one fused mesh with texture-baked colors, so individual rungs
+   * can't be recolored independently. */
+  tintColor?: string;
 }
 
-export default function DnaHelixModel({ autoRotate = true, interactive = true, className }: DnaHelixModelProps) {
+export default function DnaHelixModel({
+  autoRotate = true,
+  interactive = true,
+  className,
+  tintColor = "#eef3ee",
+}: DnaHelixModelProps) {
   const [active, setActive] = useState<string | null>(null);
 
   return (
@@ -241,7 +259,7 @@ export default function DnaHelixModel({ autoRotate = true, interactive = true, c
         <pointLight position={[-5, -4, -5]} intensity={35} color="#34d399" />
         <pointLight position={[0, 6, -4]} intensity={30} color="#ffffff" />
         <Suspense fallback={null}>
-          <Model autoRotate={autoRotate} activeId={active} onSelect={setActive} />
+          <Model autoRotate={autoRotate} activeId={active} onSelect={setActive} tintColor={tintColor} />
           <ContactShadows position={[0, -4.05, 0]} opacity={0.6} scale={10} blur={2.4} far={5} color="#000000" />
         </Suspense>
         {interactive && (

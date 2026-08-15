@@ -9,6 +9,7 @@
  */
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_VEYRA_BACKEND_URL ?? "http://localhost:8000";
+export const BACKEND_BASE_URL = BACKEND_URL;
 
 export interface OnTargetFallbackStep {
   model: string;
@@ -176,6 +177,106 @@ export async function scoreOffTargetsCFD(
         maxCfd: body.summary?.max_cfd ?? null,
       },
     };
+  } catch (e) {
+    const message = e instanceof Error && e.name === "AbortError" ? "Backend timed out" : "Backend unreachable";
+    return { ok: false, error: message };
+  }
+}
+
+export interface MeltingTempResult {
+  tmCelsius: number;
+  method: string;
+}
+
+export async function computeMeltingTemp(sequence: string): Promise<BackendCallResult<MeltingTempResult>> {
+  try {
+    const res = await withTimeout(
+      (signal) =>
+        fetch(`${BACKEND_URL}/sequence/tm`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sequence }),
+          signal,
+        }),
+      6000
+    );
+    const body = await res.json();
+    if (!res.ok) {
+      const detail = body?.detail?.errors?.[0] ?? body?.detail ?? `HTTP ${res.status}`;
+      return { ok: false, error: String(detail) };
+    }
+    return {
+      ok: true,
+      data: { tmCelsius: body.summary?.tm_celsius, method: body.metadata?.tm_method ?? "nearest_neighbor" },
+    };
+  } catch (e) {
+    const message = e instanceof Error && e.name === "AbortError" ? "Backend timed out" : "Backend unreachable";
+    return { ok: false, error: message };
+  }
+}
+
+export interface HomopolymerResult {
+  maxRun: number;
+  polyT: boolean;
+  polyG: boolean;
+  passesFilter: boolean;
+}
+
+export async function checkHomopolymerRuns(sequence: string): Promise<BackendCallResult<HomopolymerResult>> {
+  try {
+    const res = await withTimeout(
+      (signal) =>
+        fetch(`${BACKEND_URL}/sequence/homopolymer`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sequence }),
+          signal,
+        }),
+      6000
+    );
+    const body = await res.json();
+    if (!res.ok) {
+      const detail = body?.detail?.errors?.[0] ?? body?.detail ?? `HTTP ${res.status}`;
+      return { ok: false, error: String(detail) };
+    }
+    const s = body.summary ?? {};
+    return {
+      ok: true,
+      data: {
+        maxRun: s.homopolymer_max_run ?? 0,
+        polyT: Boolean(s.polyT_flag),
+        polyG: Boolean(s.polyG_flag),
+        passesFilter: Boolean(s.passes_filter),
+      },
+    };
+  } catch (e) {
+    const message = e instanceof Error && e.name === "AbortError" ? "Backend timed out" : "Backend unreachable";
+    return { ok: false, error: message };
+  }
+}
+
+/** Generic passthrough to any backend HTTP route — the raw-access escape
+ * hatch. Returns the exact response body (success or error) verbatim; never
+ * reshapes or invents fields, since this is meant to expose the real
+ * backend contract 1:1 for the raw-analysis console and any future tool. */
+export async function callBackendRaw(
+  method: "GET" | "POST",
+  path: string,
+  body?: Record<string, unknown>
+): Promise<BackendCallResult<{ status: number; json: unknown }>> {
+  try {
+    const res = await withTimeout(
+      (signal) =>
+        fetch(`${BACKEND_URL}${path}`, {
+          method,
+          headers: body ? { "content-type": "application/json" } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+          signal,
+        }),
+      15000
+    );
+    const json = await res.json().catch(() => null);
+    return { ok: true, data: { status: res.status, json } };
   } catch (e) {
     const message = e instanceof Error && e.name === "AbortError" ? "Backend timed out" : "Backend unreachable";
     return { ok: false, error: message };
