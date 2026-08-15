@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* Paper & Ink editorial palette — adapted from the Lyzr basecode design
+ * system: warm parchment ground, near-black ink, terracotta accent, sharp
+ * 2px radius. DNA base-pair colors stay separate (biological data, not
+ * chrome) and are set directly in the 3D helix component. */
+:root {
+  --radius: 0.125rem;
+  --background: #f2efe8;
+  --surface: #ede9e1;
+  --surface-raised: #fdfcf9;
+  --border: #e3ded4;
+  --border-strong: #d2cdc0;
+  --foreground: #141311;
+  --muted: #635d51;
+  --accent: #a0522d;
+  --accent-foreground: #f2efe8;
+  --accent-2: #2d6a4f;
+  --risk-low: #3f7a4f;
+  --risk-moderate: #a5671c;
+  --risk-high: #9e3b28;
+}
+
+/* Dark is opt-in via a `.dark` class (matching the Lyzr basecode pattern),
+ * not automatic OS-preference switching — light Paper & Ink is the default. */
+.dark {
+  --background: #151412;
+  --surface: #1d1c19;
+  --surface-raised: #201e1a;
+  --border: #2c2a25;
+  --border-strong: #3a372f;
+  --foreground: #ece9e2;
+  --muted: #a8a294;
+  --accent: #c17a52;
+  --accent-foreground: #201e1a;
+  --accent-2: #6f9e7d;
+  --risk-low: #6f9e7d;
+  --risk-moderate: #c09a5e;
+  --risk-high: #c05a4b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-2: var(--accent-2);
+  --color-risk-low: var(--risk-low);
+  --color-risk-moderate: var(--risk-moderate);
+  --color-risk-high: var(--risk-high);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --font-sans: var(--font-manrope), var(--font-geist-sans);
+  --font-display: var(--font-sora), var(--font-manrope);
+  --font-mono: var(--font-jetbrains-mono), var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display), var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+/* Specimen-viewer backdrop — soft radial parchment vignette, matching the
+ * anatomy-viewer reference (no grid lines competing with the 3D model). */
+.veyra-grid-bg {
+  background: radial-gradient(ellipse at center, #fdfcf9 0%, #f2efe8 55%, #ede9e1 100%);
+}
+
+.dark .veyra-grid-bg {
+  background: radial-gradient(ellipse at center, #201e1a 0%, #1d1c19 55%, #151412 100%);
+}
