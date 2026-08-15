@@ -37,6 +37,9 @@ def offtarget_search(
     chrom: str | None = None,
     start: int | None = None,
     end: int | None = None,
+    strand_search: str = "both",
+    max_results: int = 1000,
+    device: str = "auto",
 ) -> ToolResult:
     """Search a genome for approximate off-target matches to a spacer.
 
@@ -46,7 +49,7 @@ def offtarget_search(
     - "bwa": Mismatch-only search using BWA aln. Fast but no bulge support.
     - "cas_offinder": DNA/RNA bulge-aware search using Cas-OFFinder 3.0.0.
 
-    When allow_bulge=True, the cas_offinder backend is used automatically.
+    When allow_bulge=True, the cas_offinder backend must be used.
 
     Args:
         spacer_sequence: The guide/spacer sequence to search for.
@@ -55,13 +58,16 @@ def offtarget_search(
         max_mismatches: Maximum mismatches allowed.
         allow_bulge: If True, use cas_offinder backend with bulge support.
         cas_variant: Cas variant name (used for PAM context in output).
-        backend: "bwa" or "cas_offinder". Ignored when allow_bulge=True.
+        backend: "bwa" or "cas_offinder".
         max_dna_bulge: Maximum DNA bulge size (cas_offinder only).
         max_rna_bulge: Maximum RNA bulge size (cas_offinder only).
         search_scope: "genome" or "region" (cas_offinder only).
         chrom: Chromosome name (required when search_scope="region").
         start: Start position, 1-based (required when search_scope="region").
         end: End position, exclusive (required when search_scope="region").
+        strand_search: Filter by strand: "both", "fwd" (+), or "rev" (-).
+        max_results: Maximum results to return. Truncates and sets results_truncated flag.
+        device: Execution device. "auto" or "cpu". "gpu" is rejected for cas_offinder.
 
     Returns:
         ToolResult with off-target candidate rows.
@@ -69,12 +75,41 @@ def offtarget_search(
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Route to cas_offinder if bulges requested
-    if allow_bulge or backend == "cas_offinder":
-        from mcp.tools.cas_offinder_search import cas_offinder_search
+    # --- Parameter validation ---
+    if strand_search not in ("both", "fwd", "rev"):
+        return ToolResult(
+            tool="offtarget_search",
+            errors=[f"strand_search must be 'both', 'fwd', or 'rev', got '{strand_search}'"],
+        )
 
-        if backend == "bwa" and allow_bulge:
-            warnings.append("allow_bulge=True requires cas_offinder backend. Using cas_offinder.")
+    if backend not in ("bwa", "cas_offinder"):
+        return ToolResult(
+            tool="offtarget_search",
+            errors=[f"backend must be 'bwa' or 'cas_offinder', got '{backend}'"],
+        )
+
+    if device not in ("cpu", "auto"):
+        return ToolResult(
+            tool="offtarget_search",
+            errors=[f"device must be 'cpu' or 'auto', got '{device}'"],
+        )
+
+    if max_results < 1:
+        return ToolResult(
+            tool="offtarget_search",
+            errors=[f"max_results must be >= 1, got {max_results}"],
+        )
+
+    # --- allow_bulge + backend=bwa → structured error ---
+    if allow_bulge and backend == "bwa":
+        return ToolResult(
+            tool="offtarget_search",
+            errors=["BWA backend does not support bulge detection. Use backend='cas_offinder'."],
+        )
+
+    # --- cas_offinder backend ---
+    if backend == "cas_offinder":
+        from mcp.tools.cas_offinder_search import cas_offinder_search
 
         return cas_offinder_search(
             spacer_sequence=spacer_sequence,
@@ -91,8 +126,6 @@ def offtarget_search(
         )
 
     # BWA backend (mismatch-only)
-    if allow_bulge:
-        warnings.append("Bulge detection not supported by BWA backend. Using cas_offinder.")
 
     # Validate inputs
     try:
@@ -244,6 +277,17 @@ def offtarget_search(
     # Sort by mismatch count then position
     rows.sort(key=lambda r: (r.mismatch_count or 0, r.chrom or "", r.start or 0))
 
+    # Filter by strand
+    if strand_search == "fwd":
+        rows = [r for r in rows if r.strand == "+"]
+    elif strand_search == "rev":
+        rows = [r for r in rows if r.strand == "-"]
+
+    # Truncate to max_results
+    results_truncated = len(rows) > max_results
+    if results_truncated:
+        rows = rows[:max_results]
+
     summary = {
         "total_candidates": len(rows),
         "spacer_length": len(seq),
@@ -254,6 +298,9 @@ def offtarget_search(
         "coordinates": "1-based",
         "backend": "bwa-aln",
         "note": "BWA uses quality-weighted mismatches; results are approximate candidates.",
+        "results_truncated": results_truncated,
+        "execution_device": "cpu",
+        "search_scope": search_scope,
     }
 
     # Mismatch distribution

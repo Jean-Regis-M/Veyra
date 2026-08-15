@@ -98,6 +98,9 @@ def offtarget_search(request: OfftargetSearchRequest) -> VeyraResult:
         chrom=request.chrom,
         start=request.start,
         end=request.end,
+        strand_search=request.strand_search,
+        max_results=request.max_results,
+        device=request.device,
     )
     return _convert_tool_result(result)
 
