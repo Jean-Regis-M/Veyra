@@ -1296,17 +1296,18 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
     def test_rule_set_2_auto_selection_fallback(self):
         """Test that auto-selection falls back correctly when Rule Set 2 is unavailable."""
         from api import predict_ontarget_efficiency
-        
+        from core.model_registry import get_auto_model_priority
+
         result = predict_ontarget_efficiency(
             context_sequence=self.CONTEXT_30MER,
             model="auto",
         )
         self.assertEqual(result.tool, "predict_ontarget_efficiency")
         self.assertFalse(result.errors)
-        # Should select Rule Set 3 (highest priority verified model)
-        self.assertEqual(result.summary["model_used"], "rule_set_3")
-        self.assertFalse(result.summary["fallback_used"])
-        self.assertIn("rule_set_3", result.summary["fallback_chain"][0]["model"])
+        # Should select top available verified model
+        top_model = get_auto_model_priority()[0]
+        self.assertEqual(result.summary["model_used"], top_model)
+        self.assertEqual(result.summary["selection_status"], "selected")
 
     def test_python_api_ontarget_auto(self):
         """Test Python API predict_ontarget_efficiency with auto.

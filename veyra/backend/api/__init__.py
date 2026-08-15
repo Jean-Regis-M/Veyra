@@ -31,7 +31,7 @@ from schemas.canonical import (
     ComputeOnTargetEfficiencyRequest,
     VeyraResult,
 )
-from core.pam import pam_scan, pam_scan_region
+from core.pam import pam_scan as _core_pam_scan, pam_scan_region as _core_pam_scan_region
 from core.ingestion import ingest
 from core.offtarget import build_index, offtarget_search, score_offtargets
 from core.ranking import rank_candidates
@@ -105,7 +105,7 @@ def pam_scan_raw(
         strand=strand,
         chrom=chrom,
     )
-    return pam_scan(request)
+    return _core_pam_scan(request)
 
 
 def pam_scan_region(
@@ -140,7 +140,7 @@ def pam_scan_region(
         protospacer_len=protospacer_len,
         strand=strand,
     )
-    return pam_scan_region(request)
+    return _core_pam_scan_region(request)
 
 
 def build_offtarget_index(
