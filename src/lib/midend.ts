@@ -121,6 +121,53 @@ export async function sendChatMessage(
   return call("POST", "/ai/chat", { message, conversation_id: conversationId });
 }
 
+export interface CalibrationDataset {
+  input_id: string;
+  filename: string;
+  format: string;
+  input_class: string;
+  size_bytes: number;
+  row_count: number;
+  column_count: number;
+  columns: string[];
+  sample_count: number;
+  calibration_status: string;
+  validation_status: string;
+}
+
+/** Uploads a CSV/TSV calibration reference file straight to MIDEND's real
+ * /calibration/file endpoint (multipart, no bridge route needed — unlike
+ * the backend's /ingest, MIDEND accepts uploads directly). Returns the
+ * validated dataset's real input_id (calib_...), never a fabricated one. */
+export async function uploadCalibrationFile(file: File): Promise<MidendResult<CalibrationDataset>> {
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${MIDEND_URL}/calibration/file`, { method: "POST", body: form });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const detail = json?.message ?? json?.error ?? `HTTP ${res.status}`;
+      return { ok: false, error: String(detail) };
+    }
+    return { ok: true, data: json as CalibrationDataset };
+  } catch {
+    return { ok: false, error: "MIDEND unreachable" };
+  }
+}
+
+export interface SkillStarted {
+  execution_id: string;
+  skill: string;
+  status: string;
+}
+
+export async function runSkill(
+  skillId: string,
+  payload: Record<string, unknown>
+): Promise<MidendResult<SkillStarted>> {
+  return call("POST", `/skills/${skillId}`, payload);
+}
+
 export interface ExecutionStatus {
   execution_id: string;
   status: "queued" | "running" | "completed" | "failed";

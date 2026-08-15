@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   buildSessionHandbook,
+  CalibrationDataset,
   checkMidendHealth,
   createConversation,
   ExecutionStatus,
@@ -11,8 +12,10 @@ import {
   listMidendTools,
   pollExecution,
   postConversationMessage,
+  runSkill,
   sendChatMessage,
   SkillMetadata,
+  uploadCalibrationFile,
 } from "@/lib/midend";
 
 interface ChatTurn {
@@ -34,6 +37,11 @@ export default function MidendConsole() {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [calibUploading, setCalibUploading] = useState(false);
+  const [calibError, setCalibError] = useState<string | null>(null);
+  const [calibDataset, setCalibDataset] = useState<CalibrationDataset | null>(null);
+  const [calibRunning, setCalibRunning] = useState(false);
+  const [calibResult, setCalibResult] = useState<ExecutionStatus | null>(null);
 
   useEffect(() => {
     void checkMidendHealth().then((r) => setOnline(r.ok));
@@ -96,6 +104,39 @@ export default function MidendConsole() {
     setSending(false);
   }
 
+  async function handleCalibrationUpload(file: File) {
+    setCalibUploading(true);
+    setCalibError(null);
+    setCalibDataset(null);
+    setCalibResult(null);
+    const result = await uploadCalibrationFile(file);
+    setCalibUploading(false);
+    if (!result.ok) {
+      setCalibError(result.error);
+      return;
+    }
+    setCalibDataset(result.data);
+  }
+
+  async function runCalibration() {
+    if (!calibDataset || calibRunning) return;
+    setCalibRunning(true);
+    setCalibResult(null);
+    const started = await runSkill("model_calibration", { calibration_input: calibDataset.input_id });
+    if (!started.ok) {
+      setCalibError(started.error);
+      setCalibRunning(false);
+      return;
+    }
+    const result = await pollExecution(started.data.execution_id);
+    setCalibRunning(false);
+    if (!result.ok) {
+      setCalibError(result.error);
+      return;
+    }
+    setCalibResult(result.data);
+  }
+
   return (
     <div className="flex-1 pt-24 pb-20 veyra-hero-bg">
       <header className="fixed top-4 inset-x-0 z-50 px-4 sm:px-6">
@@ -145,6 +186,71 @@ export default function MidendConsole() {
                 <pre className="mt-3 max-h-72 overflow-auto rounded-sm border border-border bg-black/30 p-3 font-mono text-[11px] text-foreground whitespace-pre-wrap">
                   {handbook}
                 </pre>
+              )}
+            </div>
+
+            <div className="veyra-glass p-4 space-y-3">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                Calibration reference file (optional — the {"model_calibration"} skill)
+              </p>
+              <p className="text-xs text-muted">
+                Upload the original experimental dataset (CSV or TSV) to deterministically fit model
+                coefficients against it. Calibration is never required for ordinary analyses.
+              </p>
+              <label className="inline-flex w-max rounded-full border border-border px-4 py-2.5 text-xs text-muted hover:border-primary/40 hover:text-foreground transition-colors cursor-pointer">
+                {calibUploading ? "Validating…" : "Upload reference file (.csv / .tsv)"}
+                <input
+                  type="file"
+                  accept=".csv,.tsv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void handleCalibrationUpload(file);
+                  }}
+                />
+              </label>
+              {calibError && <p className="text-sm text-risk-high">{calibError}</p>}
+              {calibDataset && (
+                <div className="veyra-readout rounded-sm border border-engine/30 bg-engine/5 p-3 space-y-1">
+                  <span className="rounded-full border border-engine/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-engine">
+                    Engine — dataset validated
+                  </span>
+                  <p className="font-mono text-[11px] text-muted">
+                    {calibDataset.input_id} — {calibDataset.filename} — {calibDataset.row_count} rows ×{" "}
+                    {calibDataset.column_count} cols — status {calibDataset.calibration_status}
+                  </p>
+                  <p className="font-mono text-[11px] text-muted">columns: {calibDataset.columns.join(", ")}</p>
+                  <button
+                    onClick={runCalibration}
+                    disabled={calibRunning}
+                    className="mt-1 rounded-full bg-linear-to-r from-ai to-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {calibRunning ? "Fitting…" : "Run calibration"}
+                  </button>
+                </div>
+              )}
+              {calibResult && (
+                <div className="space-y-1">
+                  <p className="text-sm text-foreground/90 whitespace-pre-line">
+                    {calibResult.assistant_output ?? "(no output)"}
+                  </p>
+                  {calibResult.tool_calls.length > 0 && (
+                    <div className="veyra-readout rounded-sm border border-engine/30 bg-engine/5 p-3 space-y-1">
+                      <span className="rounded-full border border-engine/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-engine">
+                        Engine — tool calls
+                      </span>
+                      {calibResult.tool_calls.map((tc, j) => (
+                        <p key={j} className="font-mono text-[11px] text-muted">
+                          {tc.tool} — {tc.success ? "ok" : "failed"}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {calibResult.errors.length > 0 && (
+                    <p className="text-xs text-risk-high">{calibResult.errors.join("; ")}</p>
+                  )}
+                </div>
               )}
             </div>
 
