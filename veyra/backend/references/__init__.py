@@ -19,8 +19,14 @@ _REFERENCES_DIR = _VEYRA_BACKEND / "references"
 _CACHE_DIR = _VEYRA_BACKEND / "cache"
 _DATA_DIR = _VEYRA_BACKEND / "data"
 
-# CRISPOR CFD scoring resources (use canonical path)
-CRISPOR_CFD_DIR = _HCK15 / "refrences" / "data" / "benchmarks" / "crisporPaper" / "CFD_Scoring"
+# CRISPOR CFD scoring resources
+# Primary: VEYRA-local copy under data/resources/crispor_cfd/
+# Fallback: refrences.local (read-only reference infrastructure)
+_VEYRA_ROOT = _VEYRA_BACKEND.parent  # veyra/ root
+_CFD_LOCAL = _VEYRA_ROOT / "data" / "resources" / "crispor_cfd"
+_CFD_REFLOCAL = _VEYRA_ROOT / "refrences.local" / "data" / "benchmarks" / "crisporPaper" / "CFD_Scoring"
+
+CRISPOR_CFD_DIR = _CFD_LOCAL if (_CFD_LOCAL / "mismatch_score.pkl").is_file() else _CFD_REFLOCAL
 CFD_MISMATCH_SCORES = CRISPOR_CFD_DIR / "mismatch_score.pkl"
 CFD_PAM_SCORES = CRISPOR_CFD_DIR / "pam_scores.pkl"
 
@@ -123,6 +129,26 @@ def _register_defaults() -> None:
             fasta_path=str(guideseq_fa),
             fai_path=fai if os.path.isfile(fai) else None,
             metadata={"organism": "test"},
+        )
+
+    # E. coli K-12 MG1655 (integration test genome)
+    ecoli_fa = _HCK15 / "veyra" / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta"
+    if ecoli_fa.is_file():
+        fai = str(ecoli_fa) + ".fai"
+        _GENOMES["ecoli_k12_mg1655"] = GenomeConfig(
+            genome_id="ecoli_k12_mg1655",
+            display_name="E. coli K-12 MG1655 (NCBI GCF_000005845.2)",
+            fasta_path=str(ecoli_fa),
+            fai_path=fai if os.path.isfile(fai) else None,
+            bwa_index_prefix=str(ecoli_fa),
+            metadata={
+                "organism": "Escherichia coli str. K-12 substr. MG1655",
+                "assembly": "ASM584v2",
+                "accession": "GCF_000005845.2",
+                "chromosome": "NC_000913.3",
+                "length": 4641652,
+                "source": "NCBI RefSeq",
+            },
         )
 
 

@@ -1,0 +1,53 @@
+# Virtual environment
+backend/venv/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reference data (regenerable)
+*.bwt
+*.pac
+*.ann
+*.amb
+*.sa
+*.fai
+
+# Large compressed files
+*.gz
+*.zip
+*.tar.gz
+
+# Local reference data (read-only)
+refrences.local/
+
+# CFD resources (can be regenerated)
+# data/resources/crispor_cfd/
+
+# Cache database
+backend/cache/*.db
