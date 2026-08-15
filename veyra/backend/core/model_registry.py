@@ -1,7 +1,8 @@
 """VEYRA On-Target Model Registry.
 
 Tracks availability, compatibility, and verification status of all
-on-target efficiency models.
+on-target efficiency models. Integrates with the runtime manager for
+automatic isolated-environment provisioning.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from schemas.canonical import ComputeOnTargetEfficiencyRequest
 @dataclass
 class ModelInfo:
     """Information about an on-target efficiency model."""
-    
+
     model_id: str
     display_name: str
     version: str
@@ -31,15 +32,18 @@ class ModelInfo:
     installed: bool = False
     compatible: bool = False
     verified: bool = False
-    availability: str = "unknown"  # installed, missing, incompatible, unverified, verified, error
+    availability: str = "unknown"
     expected_context_length: int = 30
     expected_spacer_length: int = 20
-    output_scale: str = "0-1"  # or "0-100"
+    output_scale: str = "0-1"
     license: str = ""
     provenance: str = ""
     dependencies: dict[str, str] = field(default_factory=dict)
     error_message: str = ""
-    
+    runtime_path: str = ""
+    runtime_state: str = "not_provisioned"
+    runtime_action: str = "none"
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "model_id": self.model_id,
@@ -59,16 +63,20 @@ class ModelInfo:
             "provenance": self.provenance,
             "dependencies": self.dependencies,
             "error_message": self.error_message,
+            "runtime_path": self.runtime_path,
+            "runtime_state": self.runtime_state,
+            "runtime_action": self.runtime_action,
         }
 
 
-# Model registry
 MODEL_REGISTRY: dict[str, ModelInfo] = {}
 
 
 def _check_rule_set_2() -> ModelInfo:
     """Check Rule Set 2 (Doench 2016 / Azimuth / Fusi) availability."""
-    
+
+    from core.model_runtime import get_model_status, RuntimeState
+
     model = ModelInfo(
         model_id="rule_set_2",
         display_name="Rule Set 2 (Doench 2016 / Azimuth / Fusi)",
@@ -83,22 +91,32 @@ def _check_rule_set_2() -> ModelInfo:
         provenance="https://github.com/gpp-rnd/azimuth",
         dependencies={"scikit-learn": "0.16.1 (required for pickled model)"},
     )
-    
-    # Check if model file exists
+
+    # Check if model file exists (read-only reference)
     if not os.path.isfile(model.resource_path):
         model.availability = "missing"
         model.error_message = f"Model file not found: {model.resource_path}"
         return model
-    
+
     model.installed = True
-    
-    # Check compatibility - need old sklearn for pickled model
+
+    # Check if an isolated runtime is verified
+    rt_status = get_model_status("rule_set_2")
+    if rt_status["state"] == RuntimeState.VERIFIED:
+        model.compatible = True
+        model.verified = True
+        model.availability = "verified"
+        model.runtime_path = rt_status.get("runtime_path", "")
+        model.runtime_state = rt_status["state"]
+        model.runtime_action = "already_available"
+        return model
+
+    # Check main environment compatibility
     try:
         import sklearn
         sklearn_version = sklearn.__version__
-        model.dependencies["scikit-learn"] = f"{sklearn_version} (installed)"
-        
-        # The pickled model requires sklearn 0.16.1
+        model.dependencies["scikit-learn"] = f"{sklearn_version} (installed in main env)"
+
         major, minor = map(int, sklearn_version.split(".")[:2])
         if major == 0 and minor <= 16:
             model.compatible = True
@@ -108,36 +126,27 @@ def _check_rule_set_2() -> ModelInfo:
             model.error_message = (
                 f"Pickled Rule Set 2 model requires scikit-learn <= 0.16.1, "
                 f"but {sklearn_version} is installed. "
-                "Model was serialized with sklearn 0.16.1 and cannot be loaded "
-                "with newer versions due to internal API changes "
-                "(sklearn.ensemble._gb_losses module removed)."
+                "An isolated runtime can be provisioned via 'models setup rule_set_2'."
             )
     except Exception as e:
         model.availability = "error"
         model.error_message = f"Failed to check sklearn version: {e}"
-    
-    # If compatible, attempt to load and verify
-    if model.compatible:
-        try:
-            import pickle
-            with open(model.resource_path, "rb") as f:
-                model_data = pickle.load(f, encoding="bytes")
-            # If we can load it, verify with reference case
-            model.verified = True
-            model.availability = "verified"
-        except Exception as e:
-            model.verified = False
-            model.availability = "error"
-            model.error_message = f"Failed to load/verify model: {e}"
-    elif model.availability != "incompatible":
+
+    model.runtime_state = rt_status.get("state", "not_provisioned")
+    model.runtime_path = rt_status.get("runtime_path", "")
+    model.runtime_action = rt_status.get("runtime_action", "none")
+
+    if not model.compatible and model.availability != "incompatible":
         model.availability = "unverified"
-    
+
     return model
 
 
 def _check_rule_set_3() -> ModelInfo:
     """Check Rule Set 3 (Doench 2021) availability."""
-    
+
+    from core.model_runtime import get_model_status, RuntimeState
+
     model = ModelInfo(
         model_id="rule_set_3",
         display_name="Rule Set 3 (Doench 2021)",
@@ -152,23 +161,32 @@ def _check_rule_set_3() -> ModelInfo:
         provenance="https://github.com/gpp-rnd/rs3",
         dependencies={"rs3": "0.0.15", "lightgbm": "compatible version required"},
     )
-    
-    # Check if rs3 package is available
+
+    # Check if an isolated runtime is verified
+    rt_status = get_model_status("rule_set_3")
+    if rt_status["state"] == RuntimeState.VERIFIED:
+        model.compatible = True
+        model.verified = True
+        model.availability = "verified"
+        model.runtime_path = rt_status.get("runtime_path", "")
+        model.runtime_state = rt_status["state"]
+        model.runtime_action = "already_available"
+        return model
+
+    # Check main environment
     try:
         import rs3
+        import lightgbm
         model.installed = True
-        model.dependencies["rs3"] = f"{rs3.__version__} (installed)"
-        
-        # Check lightgbm compatibility
+        model.dependencies["rs3"] = f"{rs3.__version__} (installed in main env)"
+        model.dependencies["lightgbm"] = f"{lightgbm.__version__} (installed in main env)"
+
+        # Try to run reference case
         try:
-            import lightgbm
-            model.dependencies["lightgbm"] = f"{lightgbm.__version__} (installed)"
-            
-            # Try to run reference case
             from rs3.seq import predict_seq
             test_seq = "AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA"
             score = predict_seq([test_seq], sequence_tracr="Hsu2013")
-            
+
             model.verified = True
             model.availability = "verified"
         except Exception as e:
@@ -179,17 +197,23 @@ def _check_rule_set_3() -> ModelInfo:
     except ImportError:
         model.installed = False
         model.availability = "missing"
-        model.error_message = "rs3 package not installed (pip install rs3)"
+        model.error_message = "rs3 package not installed"
     except Exception as e:
         model.availability = "error"
         model.error_message = f"Failed to check rs3: {e}"
-    
+
+    model.runtime_state = rt_status.get("state", "not_provisioned")
+    model.runtime_path = rt_status.get("runtime_path", "")
+    model.runtime_action = rt_status.get("runtime_action", "none")
+
     return model
 
 
 def _check_doench_2014() -> ModelInfo:
     """Check Doench 2014 fallback model availability."""
-    
+
+    from core.model_runtime import get_model_status, RuntimeState
+
     model = ModelInfo(
         model_id="doench_2014",
         display_name="Doench 2014 (Rule Set 1)",
@@ -202,31 +226,35 @@ def _check_doench_2014() -> ModelInfo:
         output_scale="0-1",
         license="Open (reimplementation of published coefficients)",
         provenance="http://www.broadinstitute.org/rnai/public/analysis-tools/sgrna-design",
-        dependencies={},  # No external dependencies
+        dependencies={},
     )
-    
+
     # Doench 2014 is pure Python - always available
     model.installed = True
     model.compatible = True
     model.verified = True
     model.availability = "verified"
-    
+
+    rt_status = get_model_status("doench_2014")
+    model.runtime_state = rt_status.get("state", RuntimeState.VERIFIED)
+    model.runtime_path = rt_status.get("runtime_path", "builtin")
+
     return model
 
 
 def initialize_model_registry() -> dict[str, ModelInfo]:
     """Initialize the model registry by checking all models."""
     global MODEL_REGISTRY
-    
+
     if MODEL_REGISTRY:
         return MODEL_REGISTRY
-    
+
     MODEL_REGISTRY = {
         "rule_set_2": _check_rule_set_2(),
         "rule_set_3": _check_rule_set_3(),
         "doench_2014": _check_doench_2014(),
     }
-    
+
     return MODEL_REGISTRY
 
 
@@ -250,10 +278,14 @@ def get_auto_model_priority() -> list[str]:
     return [m for m in priority if registry.get(m, ModelInfo("", "", "", "", "")).availability == "verified"]
 
 
-def select_model(requested_model: str) -> tuple[str | None, dict[str, Any]]:
+def select_model(requested_model: str, auto_provision: bool = False) -> tuple[str | None, dict[str, Any]]:
     """
     Select a model based on request.
-    
+
+    Args:
+        requested_model: "auto", "rule_set_2", "rule_set_3", "doench_2014", "both"
+        auto_provision: If True and model="auto", attempt provisioning of unavailable models
+
     Returns:
         (model_used, selection_metadata)
     """
@@ -268,73 +300,101 @@ def select_model(requested_model: str) -> tuple[str | None, dict[str, Any]]:
         "fallback_to": None,
         "fallback_reason": None,
         "fallback_chain": [],
+        "runtime_actions": {},
     }
-    
+
     if requested_model == "auto":
-        # Auto-selection: choose highest-priority verified model
-        available = get_auto_model_priority()
-        
-        if not available:
-            selection["model_used"] = None
+        # Auto-selection: try each model in priority order
+        priority = ["rule_set_3", "rule_set_2", "doench_2014"]
+
+        # Build full fallback chain
+        chain = []
+        selected = None
+        for i, m in enumerate(priority):
+            info = registry.get(m)
+            if info and info.availability == "verified":
+                chain.append({
+                    "model": m,
+                    "status": info.availability,
+                    "reason": "selected",
+                })
+                selected = m
+                break
+            elif info:
+                chain.append({
+                    "model": m,
+                    "status": info.availability,
+                    "reason": info.error_message or "unavailable",
+                })
+
+        if selected is None:
             selection["model_status"] = "no_verified_model"
             selection["selection_status"] = "failed"
-            selection["fallback_chain"] = [
-                {"model": m, "status": registry[m].availability, "reason": registry[m].error_message or "unknown"}
-                for m in ["rule_set_3", "rule_set_2", "doench_2014"]
-            ]
+            selection["fallback_chain"] = chain
             return None, selection
-        
-        # Use the highest-priority available model
-        selected = available[0]
+
+        info = registry[selected]
         selection["model_used"] = selected
-        selection["model_status"] = registry[selected].availability
+        selection["model_status"] = info.availability
         selection["selection_status"] = "selected"
-        selection["fallback_used"] = False
-        
-        # Build fallback chain for transparency
-        for m in ["rule_set_3", "rule_set_2", "doench_2014"]:
-            info = registry[m]
-            if m == selected:
-                selection["fallback_chain"].append({
-                    "model": m,
-                    "status": info.availability,
-                    "reason": "selected" if info.availability == "verified" else info.error_message
-                })
-                break
-            else:
-                selection["fallback_chain"].append({
-                    "model": m,
-                    "status": info.availability,
-                    "reason": info.error_message or "unavailable"
-                })
-        
+        selection["runtime_action"] = info.runtime_action
+
+        # Determine if this was a fallback
+        if selected != "rule_set_3":
+            selection["fallback_used"] = True
+            selection["fallback_from"] = "rule_set_3"
+            selection["fallback_to"] = selected
+            selection["fallback_reason"] = "rule_set_3_unavailable"
+
+        selection["fallback_chain"] = chain
         return selected, selection
-    
+
     # Explicit model selection
     if requested_model not in registry:
-        selection["model_used"] = None
         selection["model_status"] = "unknown_model"
         selection["selection_status"] = "failed"
         return None, selection
-    
+
     info = registry[requested_model]
-    selection["model_used"] = requested_model
-    selection["model_status"] = info.availability
-    
+
+    # If verified, use it
     if info.availability == "verified":
+        selection["model_used"] = requested_model
+        selection["model_status"] = info.availability
         selection["selection_status"] = "selected"
         selection["fallback_used"] = False
-    else:
-        # Explicit model requested but not available - DO NOT FALL BACK
-        selection["selection_status"] = "failed"
-        selection["fallback_used"] = False
-        selection["fallback_chain"] = [{
-            "model": requested_model,
-            "status": info.availability,
-            "reason": info.error_message or "model not verified"
-        }]
-    
-    return requested_model if info.availability == "verified" else None, selection
+        selection["runtime_action"] = info.runtime_action
+        return requested_model, selection
+
+    # Explicit model requested but not verified - attempt provisioning if requested
+    if auto_provision:
+        from core.model_runtime import ensure_model_ready
+        model_used, rt_info = ensure_model_ready(requested_model)
+        if model_used:
+            # Refresh registry
+            initialize_model_registry()
+            registry = get_model_registry()
+            info = registry[requested_model]
+            selection["model_used"] = requested_model
+            selection["model_status"] = info.availability
+            selection["selection_status"] = "selected"
+            selection["fallback_used"] = False
+            selection["runtime_action"] = rt_info.get("runtime_action", "auto_provisioned")
+            selection["runtime_actions"][requested_model] = rt_info
+            return requested_model, selection
+        else:
+            selection["runtime_actions"][requested_model] = rt_info
+
+    # Explicit model not available - DO NOT FALL BACK
+    selection["model_status"] = info.availability
+    selection["selection_status"] = "failed"
+    selection["fallback_used"] = False
+    selection["fallback_chain"] = [{
+        "model": requested_model,
+        "status": info.availability,
+        "reason": info.error_message or "model not verified",
+    }]
+    return None, selection
 
 
 def get_model_fallback_info(model_id: str) -> dict[str, Any]:
@@ -343,7 +403,7 @@ def get_model_fallback_info(model_id: str) -> dict[str, Any]:
     info = registry.get(model_id)
     if not info:
         return {"error": f"Unknown model: {model_id}"}
-    
+
     return {
         "model_id": model_id,
         "display_name": info.display_name,
@@ -353,6 +413,9 @@ def get_model_fallback_info(model_id: str) -> dict[str, Any]:
         "installed": info.installed,
         "error_message": info.error_message,
         "dependencies": info.dependencies,
+        "runtime_path": info.runtime_path,
+        "runtime_state": info.runtime_state,
+        "runtime_action": info.runtime_action,
     }
 
 

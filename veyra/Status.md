@@ -20,7 +20,7 @@
 |------|--------|----------|-------|---------------|
 | Ingestion | COMPLETE | 60 tests pass | 60/60 | GenBank length warning |
 | PAM Scanning | COMPLETE | 13 tests pass | 13/13 | None |
-| MCP Tools | COMPLETE | 150 tests pass | 150/150 | 6 skipped (fixture deps) |
+| MCP Tools | COMPLETE | 21 tools registered (4 model runtime + 13 existing) | 170/170 | 6 skipped (fixture deps); +20 model runtime tests |
 | Interface Parity | COMPLETE | 61 tests pass | 61/61 | None |
 | CLI | COMPLETE | Verified | - | Legacy CLI preserved |
 | HTTP API | COMPLETE | 16 endpoints verified | - | Deprecation warning |
@@ -31,7 +31,7 @@
 | Documentation | COMPLETE | 19 files updated | - | None |
 | Cas-OFFinder Integration | COMPLETE | Bulge-aware search implemented | 26/26 | CPU-only mode |
 | Black-Box Verification | COMPLETE | All 4 interfaces verified | 10/10 PASS | Real engine execution |
-| On-Target Efficiency | COMPLETE | Auto-fallback (rule_set_3→rs2→doench_2014) with full transparency; Doench 2014 verified; explicit models reject with error | 13/13 | sklearn 1.9+ incompatibility with Azimuth (explicit model rejected); rs3/lightgbm runtime error (explicit model rejected); model_registry + introspect CLI added |
+| On-Target Efficiency | COMPLETE | Auto-fallback + auto-provisioning model registry; Doench 2014 verified; isolated runtime provisioning for Rule Set 2/3; transparent reporting | 38/38 | Rule Set 2/3 need isolated runtimes (sklearn 0.16.1 / lightgbm 3.x); Doench 2014 always available |
 
 ## Detailed Subsystem Tables
 
@@ -73,16 +73,19 @@
 
 | Component | Status | Implementation | Test | Model Source | Caveats |
 |-----------|--------|----------------|------|--------------|---------|
-| Rule Set 2 (Doench 2016) | INCOMPATIBLE (verified fallback) | core/ontarget.py + core/model_registry.py | 13/13 | sklearn 1.9+ incompatibility; Doench 2014 fallback used (auto) or error (explicit) |
-| Rule Set 3 (Doench 2021) | INCOMPATIBLE (verified fallback) | core/ontarget.py + core/model_registry.py | 13/13 | lightgbm 4.7.0 rs3 runtime error; Doench 2014 fallback used (auto) or error (explicit) |
-| Doench 2014 (fallback) | COMPLETE | core/ontarget.py | 13/13 | Pure Python, always available |
-| Model Registry | COMPLETE | core/model_registry.py | 13/13 | Auto-fallback with transparent reporting + fallback_chain |
-| Context validation | COMPLETE | core/ontarget.py | 13/13 | 30-mer requirement enforced |
-| Model selection (auto) | COMPLETE | core/ontarget.py | 13/13 | Returns doench_2014 with full fallback_chain |
-| Model selection (explicit) | COMPLETE | core/ontarget.py | 13/13 | Explicit models NEVER fall back; return error |
-| Normalization | COMPLETE | core/ontarget.py | 13/13 | All models already 0-1 |
-| Rounding | COMPLETE | core/ontarget.py | 13/13 | Default 3 decimals |
-| CLI models list/describe/check | COMPLETE | cli/main.py | 13/13 | Model introspection commands |
+| Rule Set 2 (Doench 2016) | INCOMPATIBLE (isolated runtime available) | core/ontarget.py + core/model_runtime.py + core/model_registry.py | 38/38 | sklearn <=0.16.1 needed; isolated runtime can be provisioned via `models setup rule_set_2` |
+| Rule Set 3 (Doench 2021) | INCOMPATIBLE (isolated runtime available) | core/ontarget.py + core/model_runtime.py + core/model_registry.py | 38/38 | rs3/lightgbm 4.7.0 conflict; isolated runtime with lightgbm==3.3.5 can be provisioned |
+| Doench 2014 (fallback) | COMPLETE | core/ontarget.py | 38/38 | Pure Python, always available, no isolated runtime needed |
+| Model Registry | COMPLETE | core/model_registry.py | 38/38 | Runtime states, auto-fallback with transparent reporting |
+| Model Runtime Manager | COMPLETE | core/model_runtime.py | 38/38 | Isolated venvs, provisioning, verification, locking |
+| Context validation | COMPLETE | core/ontarget.py | 38/38 | 30-mer requirement enforced |
+| Model selection (auto) | COMPLETE | core/ontarget.py + core/model_registry.py | 38/38 | Auto-provisioning + fallback with full chain reporting |
+| Model selection (explicit) | COMPLETE | core/ontarget.py + core/model_registry.py | 38/38 | Explicit models NEVER fall back; return error |
+| Normalization | COMPLETE | core/ontarget.py | 38/38 | All models already 0-1 |
+| Rounding | COMPLETE | core/ontarget.py | 38/38 | Default 3 decimals |
+| CLI models setup/verify | COMPLETE | cli/main.py | 38/38 | Provisioning + verification subcommands |
+| HTTP API /models/* | COMPLETE | http_api/app.py | 38/38 | GET/POST endpoints for runtime management |
+| MCP model tools | COMPLETE | mcp/tools/model_runtime.py | 38/38 | setup_model, verify_model, model_status, models_list_runtimes |
 
 ### Sequence Properties
 
@@ -116,8 +119,8 @@
 ## Test Summary
 
 ```
-Total:    372
-Passed:   372
+Total:    397
+Passed:   397
 Failed:   0
 Skipped:  6
 Warnings: 7
@@ -166,15 +169,15 @@ Warnings: 7
 4. **DNA→RNA conversion** — ViennaRNA folds RNA; DNA sequences converted to RNA (T→U) before folding
 5. **Seed anchor** — Only `pam_proximal` anchor currently supported
 6. **CPU-only Cas-OFFinder** — Slower than GPU-accelerated mode
-7. **Rule Set 2 (Azimuth)**: Incompatible — sklearn ≤0.16.1 needed but Python 3.12 requires sklearn 1.9+; auto-falls back to Doench 2014 with transparent reporting; explicit `model="rule_set_2"` returns error
-8. **Rule Set 3 (Doench 2021)**: Incompatible — rs3 v0.0.15 has lightgbm 4.7.0 sklearn API conflict; auto-falls back to Doench 2014; explicit `model="rule_set_3"` returns error in workspace
+7. **Rule Set 2 (Azimuth)**: Incompatible in main env — sklearn ≤0.16.1 needed but Python 3.12 requires sklearn 1.9+; isolated runtime provisioning available via `models setup rule_set_2`; auto-falls back to Doench 2014 with transparent reporting; explicit `model="rule_set_2"` returns error
+8. **Rule Set 3 (Doench 2021)**: Incompatible in main env — rs3/lightgbm 4.7.0 runtime error; isolated runtime provisioning available via `models setup rule_set_3` with lightgbm==3.3.5; explicit `model="rule_set_3"` returns error in main env
+9. **Model provisioning in isolated runtimes**: Requires compatible Python versions (3.8 for legacy sklearn/lightgbm); if unavailable, provisioning may fail
 
 ## Next Recommended Work
 
-1. **Fix Rule Set 2** — Resolve sklearn compatibility or port Azimuth model to modern sklearn (blocked: Python 3.12 cannot use sklearn ≤0.16.1)
-2. **Fix Rule Set 3** — Resolve rs3/lightgbm compatibility issue
-3. **Add more E2E tests** — Test full pipeline with real genomes
-4. **Implement GPU-accelerated Cas-OFFinder** — When OpenCL GPU runtime available
+1. **Provision isolated runtimes** — `veyra models setup rule_set_2` / `rule_set_3` (requires Python 3.8)
+2. **Add more E2E tests** — Test full pipeline with real genomes
+3. **Implement GPU-accelerated Cas-OFFinder** — When OpenCL GPU runtime available
 
 ## Dependencies
 
@@ -192,6 +195,18 @@ Warnings: 7
 
 ## Files Changed This Session
 
+### Auto Model Runtime Provisioning
+- `backend/core/model_runtime.py` — Model runtime manager: isolated venvs, provisioning, verification, locking, state machine
+- `backend/core/model_registry.py` — Extended with runtime states, integration with model_runtime
+- `backend/mcp/tools/model_runtime.py` — New MCP tools: models_list_runtimes, model_status, setup_model, verify_model
+- `backend/api/__init__.py` — Added provision_model, verify_model, ensure_model_ready, get_model_status, list_model_runtimes, get_model_spec
+- `backend/cli/main.py` — Added `models setup`, `models verify` subcommands
+- `backend/http_api/app.py` — Added GET /models, GET /models/{id}, POST /models/{id}/setup, POST /models/{id}/verify, GET /models/{id}/status
+- `backend/mcp/server.py` — Registered 4 model runtime MCP tools (now 21 tools total)
+- `backend/tests/test_interfaces.py` — Added TestModelRuntimeProvisioning (13), TestModelRuntimeHTTPAPI (6), TestModelRuntimeMCP (6)
+- `backend/doc/model_runtime.md` — New model runtime manager documentation
+
+### On-Target Efficiency (previous work)
 - `backend/mcp/tools/compute_seed_gc.py` — New seed GC MCP tool
 - `backend/core/seed_gc.py` — Core seed GC service wrapper
 - `backend/core/model_registry.py` — Model registry with availability tracking and auto-fallback

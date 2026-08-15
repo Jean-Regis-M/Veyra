@@ -43,6 +43,15 @@ from core.positional_features import compute_positional_features as _core_comput
 from core.dinucleotide import compute_dinucleotide_composition as _core_compute_dinuc
 from core.seed_gc import compute_seed_gc as _core_compute_seed_gc
 from core.ontarget import predict_ontarget_efficiency as _core_predict_ontarget
+from core.model_runtime import (
+    provision_model as _provision_model,
+    verify_model as _verify_model,
+    ensure_model_ready as _ensure_model_ready,
+    get_model_status as _get_model_status,
+    list_model_runtimes as _list_model_runtimes,
+    get_model_spec as _get_model_spec,
+    RuntimeState,
+)
 from core.genome import list_genomes, genome_info
 from core.cache import cache_status, cache_clear
 
@@ -708,7 +717,7 @@ __all__ = [
     "compute_melting_temp",
     "compute_secondary_structure",
     "compute_positional_features",
-    "compute_dinucleotide_composition",
+     "compute_dinucleotide_composition",
     "compute_seed_gc",
     "analyze_mismatch_seed",
     "compute_cut_site",
@@ -717,5 +726,89 @@ __all__ = [
     "get_genome_info",
     "get_cache_info",
     "clear_cache",
+    # Model runtime management
+    "provision_model",
+    "verify_model",
+    "ensure_model_ready",
+    "get_model_status",
+    "list_model_runtimes",
+    "get_model_spec",
+    "RuntimeState",
+    "get_model_registry",
+    "get_model_info",
+    "select_model",
     "VeyraResult",
 ]
+
+
+def provision_model(model_id: str, force: bool = False) -> dict:
+    """Provision an isolated runtime for a model.
+
+    Creates a virtualenv under data/model_envs/<model_id>/ and installs
+    the model's required dependencies.
+
+    Args:
+        model_id: Model to provision (rule_set_2, rule_set_3, doench_2014)
+        force: If True, recreate even if runtime exists
+
+    Returns:
+        Dict with provisioning outcome (action, runtime_status, runtime_path, etc.)
+    """
+    return _provision_model(model_id, force=force)
+
+
+def verify_model(model_id: str) -> dict:
+    """Verify a model runtime with health check.
+
+    Args:
+        model_id: Model to verify
+
+    Returns:
+        Dict with verification result (pass/fail, error details)
+    """
+    return _verify_model(model_id)
+
+
+def ensure_model_ready(model_id: str) -> tuple[str | None, dict]:
+    """Ensure a model is ready for use, provisioning if needed.
+
+    Args:
+        model_id: Model to check/provision
+
+    Returns:
+        (model_id_or_none, status_dict)
+    """
+    return _ensure_model_ready(model_id)
+
+
+def get_model_status(model_id: str) -> dict:
+    """Get the runtime status for a model.
+
+    Args:
+        model_id: Model identifier
+
+    Returns:
+        Dict with state, runtime_path, python_version, dependency_status, verification_status
+    """
+    return _get_model_status(model_id)
+
+
+def list_model_runtimes() -> list[dict]:
+    """List all model runtime states.
+
+    Returns:
+        List of runtime status dicts for all models
+    """
+    return _list_model_runtimes()
+
+
+def get_model_spec(model_id: str) -> dict | None:
+    """Get the trusted specification for a model.
+
+    Args:
+        model_id: Model identifier
+
+    Returns:
+        Dict with model specification (dependencies, resources, verification case, etc.)
+    """
+    return _get_model_spec(model_id)

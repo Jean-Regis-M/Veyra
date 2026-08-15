@@ -205,10 +205,27 @@ def _predict_rs2_model(seq: str) -> float | None:
 
 def _execute_model(model_id: str, seq: str) -> tuple[float | None, str]:
     """Execute a specific model by ID.
-    
+
+    If an isolated runtime exists for the model, use it.
+    Otherwise, try the main environment.
+
     Returns:
         (score, model_source_description)
     """
+    from core.model_runtime import get_model_status, RuntimeState
+
+    rt_status = get_model_status(model_id)
+    runtime_path = rt_status.get("runtime_path")
+
+    # Try isolated runtime first if it exists and is verified
+    if runtime_path and os.path.exists(runtime_path) and rt_status.get("state") == RuntimeState.VERIFIED:
+        python_bin = os.path.join(runtime_path, "bin", "python")
+        if os.path.exists(python_bin):
+            score, source = _run_in_isolated_runtime(model_id, python_bin, seq)
+            if score is not None:
+                return score, f"{source} (isolated runtime: {runtime_path})"
+
+    # Try main environment
     if model_id == "rule_set_2":
         # Try azimuth first, then pickled model
         score = _predict_rs2_azimuth(seq)
@@ -218,7 +235,7 @@ def _execute_model(model_id: str, seq: str) -> tuple[float | None, str]:
         if score is not None:
             return score, "fusiDoench V3_model_nopos (Doench 2016 / Azimuth 2.0)"
         return None, "unavailable"
-    
+
     elif model_id == "rule_set_3":
         try:
             import numpy as np
@@ -227,12 +244,123 @@ def _execute_model(model_id: str, seq: str) -> tuple[float | None, str]:
             return float(score), "rs3 LightGBM (Doench 2021 / Rule Set 3)"
         except Exception:
             return None, "unavailable"
-    
+
     elif model_id == "doench_2014":
         score = _predict_doench2014(seq)
         return score, "Doench 2014 linear regression (reimplemented from crisporEffScores)"
-    
+
     return None, "unknown_model"
+
+
+def _run_in_isolated_runtime(model_id: str, python_bin: str, seq: str) -> tuple[float | None, str]:
+    """Run a model prediction in an isolated runtime via subprocess.
+
+    Args:
+        model_id: Model to run
+        python_bin: Path to isolated Python binary
+        seq: 30-mer context sequence
+
+    Returns:
+        (score, source_description)
+    """
+    import json
+    import subprocess
+    import tempfile
+
+    spec = {
+        "model_id": model_id,
+        "context_sequence": seq,
+        "backend_dir": _BACKEND_DIR,
+        "veyra_dir": _VEYRA_DIR,
+    }
+
+    # Write a temporary runner script
+    runner_script = f'''
+import sys
+import json
+import os
+
+sys.path.insert(0, "{_BACKEND_DIR}")
+
+spec = json.loads(sys.argv[1])
+model_id = spec["model_id"]
+seq = spec["context_sequence"]
+
+try:
+    if model_id == "rule_set_3":
+        import rs3
+        from rs3.seq import predict_seq, featurize_context, load_seq_model
+        import joblib
+        model = load_seq_model()
+        if getattr(model, "_n_classes", None) is None:
+            model._n_classes = 0
+        feats = featurize_context([seq])
+        score = float(model.predict(feats)[0])
+        print(json.dumps({{"score": score, "source": "rs3 LightGBM (isolated runtime)"}}))
+
+    elif model_id == "rule_set_2":
+        import pickle
+        import numpy as np
+        import pandas as pd
+        import sys
+        sys.path.insert(0, os.path.join("{_VEYRA_DIR}", "refrences.local", "data", "tools", "crisporWebsite", "bin", "fusiDoench", "analysis"))
+        model_path = "{_VEYRA_DIR}/refrences.local/data/tools/crisporWebsite/bin/fusiDoench/saved_models/V3_model_nopos.pickle"
+        with open(model_path, "rb") as f:
+            model_data = pickle.load(f, encoding="bytes")
+        if isinstance(model_data, tuple) and len(model_data) == 2:
+            model, learn_options = model_data
+        else:
+            model = model_data
+            learn_options = {{}}
+        Xdf = pd.DataFrame(columns=["30mer", "Strand"], data=[[seq, "NA"]])
+        gene_position = pd.DataFrame(columns=["Percent Peptide", "Amino Acid Cut position"], data=[[-1, -1]])
+        import model_comparison
+        import features.featurization as feat
+        feature_sets = feat.featurize_data(Xdf, learn_options, pd.DataFrame(), gene_position, pam_audit=False, length_audit=False)
+        inputs, dim, dimsum, feature_names = model_comparison.concatenate_feature_sets(feature_sets)
+        preds = model.predict(inputs)
+        print(json.dumps({{"score": float(preds[0]), "source": "fusiDoench V3 (isolated runtime)"}}))
+
+    else:
+        print(json.dumps({{"error": "Unknown model"}}))
+        sys.exit(1)
+
+except Exception as e:
+    print(json.dumps({{"error": str(e)}}))
+    sys.exit(1)
+'''
+
+    script_path = os.path.join(_STATE_DIR, f"runner_{model_id}.py")
+    with open(script_path, "w") as f:
+        f.write(runner_script)
+
+    try:
+        result = subprocess.run(
+            [python_bin, script_path, json.dumps(spec)],
+            capture_output=True, text=True, timeout=120,
+            cwd=_BACKEND_DIR,
+        )
+
+        if result.returncode != 0:
+            return None, f"runtime error: {result.stderr.strip()[:200]}"
+
+        output = json.loads(result.stdout.strip())
+        if "error" in output:
+            return None, f"runtime error: {output['error'][:200]}"
+
+        return output["score"], output["source"]
+
+    except subprocess.TimeoutExpired:
+        return None, "runtime timeout"
+    except json.JSONDecodeError:
+        return None, f"runtime parse error: {result.stdout[:200]}"
+    except Exception as e:
+        return None, f"runtime error: {e}"
+    finally:
+        try:
+            os.unlink(script_path)
+        except Exception:
+            pass
 
 
 def predict_ontarget_efficiency(request: ComputeOnTargetEfficiencyRequest) -> VeyraResult:
@@ -255,10 +383,10 @@ def predict_ontarget_efficiency(request: ComputeOnTargetEfficiencyRequest) -> Ve
         VeyraResult with on-target efficiency scores and selection metadata.
     """
     from mcp.schemas import validate_dna_sequence
-    
+
     errors = []
     warnings = []
-    
+
     # Validate context sequence
     try:
         full_seq = validate_dna_sequence(request.context_sequence)
@@ -300,13 +428,21 @@ def predict_ontarget_efficiency(request: ComputeOnTargetEfficiencyRequest) -> Ve
             errors=["Could not extract PAM from context sequence"],
         )
     
-    # Model selection - support "auto" and "both" as aliases
+               # Model selection - support "auto" and "both" as aliases
     requested_model = request.model.lower()
     if requested_model == "both":
         requested_model = "auto"
-    
+
     # Select model using registry
-    model_used, selection = select_model(requested_model)
+    # For auto: attempt provisioning of incompatible models before falling back
+    auto_provision = (requested_model == "auto")
+    model_used, selection = select_model(requested_model, auto_provision=auto_provision)
+
+    # Re-check: after provisioning, refresh the registry
+    if auto_provision and (model_used is None and selection.get("selection_status") == "failed"):
+        from core.model_registry import initialize_model_registry
+        initialize_model_registry()
+        model_used, selection = select_model(requested_model, auto_provision=auto_provision)
     
     # If explicit model requested but unavailable, return error
     if requested_model != "auto" and model_used is None:

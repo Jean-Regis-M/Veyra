@@ -638,6 +638,96 @@ async def predict_ontarget_efficiency(request: PredictOnTargetEfficiencyRequestM
     return _result_to_response(result)
 
 
+@app.get("/models")
+async def list_models():
+    """List all on-target models with availability and runtime status."""
+    from core.model_runtime import list_model_runtimes
+    from core.model_registry import get_model_registry
+
+    registry = get_model_registry()
+    runtimes = {rt["model_id"]: rt for rt in list_model_runtimes()}
+
+    models = []
+    for model_id in ["rule_set_3", "rule_set_2", "doench_2014"]:
+        info = registry.get(model_id)
+        rt = runtimes.get(model_id, {})
+        models.append({
+            "model_id": model_id,
+            "display_name": info.display_name if info else "unknown",
+            "availability": info.availability if info else "unknown",
+            "verified": info.verified if info else False,
+            "runtime_state": rt.get("state", "not_provisioned"),
+            "runtime_path": rt.get("runtime_path", ""),
+            "python_version": rt.get("python_version"),
+            "dependency_status": rt.get("dependency_status"),
+            "verification_status": rt.get("verification_status"),
+            "expected_python": rt.get("expected_python"),
+        })
+
+    return {"models": models}
+
+
+@app.get("/models/{model_id}")
+async def get_model(model_id: str):
+    """Get detailed information about a specific model."""
+    from core.model_runtime import get_model_status
+    from core.model_registry import get_model_info
+
+    info = get_model_info(model_id)
+    if not info:
+        raise HTTPException(status_code=404, detail={"error": f"Unknown model: {model_id}"})
+
+    rt_status = get_model_status(model_id)
+    info_dict = info.to_dict()
+    info_dict["runtime"] = rt_status
+
+    return info_dict
+
+
+@app.post("/models/{model_id}/setup")
+async def setup_model(model_id: str, force: bool = False):
+    """Provision an isolated runtime for a model.
+    
+    This may be expensive (creates venv, installs packages).
+    Only modifies project-local model environments under data/model_envs/.
+    Does NOT modify the main VEYRA environment.
+    """
+    from core.model_runtime import provision_model, get_model_spec
+
+    if not get_model_spec(model_id):
+        raise HTTPException(status_code=404, detail={"error": f"Unknown model: {model_id}"})
+
+    result = provision_model(model_id, force=force)
+    if result.get("runtime_status") == "verified" or result.get("action") == "no_provisioning_needed":
+        return {"success": True, "result": result}
+    else:
+        return {"success": False, "result": result}
+
+
+@app.post("/models/{model_id}/verify")
+async def verify_model_endpoint(model_id: str):
+    """Verify a model's runtime with health check."""
+    from core.model_runtime import verify_model, get_model_spec
+
+    if not get_model_spec(model_id):
+        raise HTTPException(status_code=404, detail={"error": f"Unknown model: {model_id}"})
+
+    result = verify_model(model_id)
+    if result.get("verification_status") == "pass":
+        return {"success": True, "result": result}
+    else:
+        return {"success": False, "result": result}
+
+
+@app.get("/models/{model_id}/status")
+async def model_status(model_id: str):
+    """Get the runtime status of a model."""
+    from core.model_runtime import get_model_status
+
+    status = get_model_status(model_id)
+    return status
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

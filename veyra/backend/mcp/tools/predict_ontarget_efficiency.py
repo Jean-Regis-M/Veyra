@@ -5,9 +5,11 @@ Predict on-target SpCas9 efficiency using Rule Set models.
 This is fundamentally different from CFD/off-target specificity.
 It answers: "How efficiently is this intended guide expected to cut?"
 
-Available models:
-- rule_set_2: Doench 2016 / Fusi / Azimuth (AdaBoost, 0-1 scale)
-- rule_set_3: NOT IMPLEMENTED (model files not available)
+    Available models:
+- rule_set_3: Doench 2021 (LightGBM via rs3)
+- rule_set_2: Doench 2016 / Fusi / Azimuth (AdaBoost)
+- doench_2014: Doench 2014 linear regression (pure Python)
+- auto: Select highest-priority verified model (with auto-provisioning)
 
 Tier 1 — CHEAP / DETERMINISTIC
 Cost: cheap / deterministic
@@ -27,7 +29,7 @@ from schemas.canonical import ComputeOnTargetEfficiencyRequest
 
 def predict_ontarget_efficiency_tool(
     context_sequence: str,
-    model: str = "rule_set_2",
+    model: str = "auto",
     context_upstream: int = 4,
     context_downstream: int = 3,
     spacer_length: int = 20,
@@ -40,12 +42,14 @@ def predict_ontarget_efficiency_tool(
     It answers: "How efficiently is this intended guide expected to cut?"
 
     Available models:
-    - rule_set_2: Doench 2016 / Fusi / Azimuth (AdaBoost, 0-1 scale)
-    - rule_set_3: NOT IMPLEMENTED (model files not available)
+    - auto: Select highest-priority verified model (with auto-provisioning)
+    - rule_set_3: Doench 2021 (LightGBM via rs3)
+    - rule_set_2: Doench 2016 / Fusi / Azimuth (AdaBoost)
+    - doench_2014: Doench 2014 linear regression (pure Python)
 
     Args:
         context_sequence: Full context sequence (upstream + spacer + PAM + downstream).
-        model: "rule_set_2", "rule_set_3", or "both".
+        model: "auto", "rule_set_2", "rule_set_3", "doench_2014", or "both".
         context_upstream: Number of nucleotides upstream of spacer.
         context_downstream: Number of nucleotides downstream of PAM.
         spacer_length: Length of the spacer/protospacer.
@@ -91,7 +95,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="VEYRA predict_ontarget_efficiency tool")
     parser.add_argument("--context-sequence", "-s", required=True, help="Context sequence")
-    parser.add_argument("--model", default="rule_set_2", choices=["rule_set_2", "rule_set_3", "both"])
+    parser.add_argument("--model", default="auto", choices=["auto", "rule_set_2", "rule_set_3", "doench_2014", "both"])
     parser.add_argument("--context-upstream", type=int, default=4, help="Upstream context length")
     parser.add_argument("--context-downstream", type=int, default=3, help="Downstream context length")
     parser.add_argument("--spacer-length", type=int, default=20, help="Spacer length")

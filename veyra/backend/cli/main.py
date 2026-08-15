@@ -291,16 +291,95 @@ def _cmd_models_describe(args):
 def _cmd_models_check(args):
     """Handle models check command."""
     from core.model_registry import get_model_registry, get_model_fallback_info
+    from core.model_runtime import list_model_runtimes
     from schemas.canonical import VeyraResult
 
     registry = get_model_registry()
     models = []
     for model_id in ["rule_set_3", "rule_set_2", "doench_2014"]:
-        models.append(get_model_fallback_info(model_id))
+        fb_info = get_model_fallback_info(model_id)
+        fb_info["runtime"] = list_model_runtimes()[0] if model_id == "rule_set_3" else None
+        for rt in list_model_runtimes():
+            if rt["model_id"] == model_id:
+                fb_info["runtime"] = rt
+                break
+        models.append(fb_info)
 
     result = VeyraResult(
         tool="models_check",
         summary={"models": models},
+    )
+    return _output_result(result, args)
+
+
+def _cmd_models_setup(args):
+    """Handle models setup command."""
+    from core.model_runtime import provision_model
+    from schemas.canonical import VeyraResult
+
+    model_id = args.model_name
+
+    if args.all:
+        from core.model_runtime import MODEL_SPECS
+        model_ids = list(MODEL_SPECS.keys())
+    else:
+        model_ids = [model_id] if model_id else []
+        if not model_ids:
+            print("Error: specify a model name or use --all", file=sys.stderr)
+            return 1
+
+    results = []
+    errors = []
+    for mid in model_ids:
+        result = provision_model(mid, force=args.force)
+        results.append(result)
+        if result.get("action") in ("failed", None) or result.get("runtime_status") != "verified":
+            if result.get("action") == "no_provisioning_needed":
+                continue
+            errors.append(result.get("error", f"Unknown model or provisioning failed: {mid}"))
+
+    overall_success = all(r.get("runtime_status") == "verified" or r.get("action") == "no_provisioning_needed" for r in results)
+
+    result = VeyraResult(
+        tool="models_setup",
+        summary={
+            "results": results,
+            "all_verified": overall_success,
+        },
+        errors=errors,
+    )
+    return _output_result(result, args)
+
+
+def _cmd_models_verify(args):
+    """Handle models verify command."""
+    from core.model_runtime import verify_model, get_model_status
+    from schemas.canonical import VeyraResult
+
+    model_id = args.model_name
+
+    if args.all:
+        from core.model_runtime import MODEL_SPECS
+        model_ids = list(MODEL_SPECS.keys())
+    else:
+        model_ids = [model_id] if model_id else []
+        if not model_ids:
+            print("Error: specify a model name or use --all", file=sys.stderr)
+            return 1
+
+    results = []
+    for mid in model_ids:
+        result = verify_model(mid)
+        results.append(result)
+
+    overall_success = all(r.get("verification_status") == "pass" for r in results)
+
+    result = VeyraResult(
+        tool="models_verify",
+        summary={
+            "results": results,
+            "all_verified": overall_success,
+        },
     )
     return _output_result(result, args)
 
@@ -753,6 +832,19 @@ def _build_parser():
     models_check_parser = models_sub.add_parser("check", help="Check model availability and dependencies")
     _add_output_args(models_check_parser)
     models_check_parser.set_defaults(func=_cmd_models_check)
+
+    models_setup_parser = models_sub.add_parser("setup", help="Provision isolated runtime for a model")
+    models_setup_parser.add_argument("model_name", nargs="?", help="Model name (rule_set_2, rule_set_3, doench_2014)")
+    models_setup_parser.add_argument("--all", action="store_true", help="Setup all models")
+    models_setup_parser.add_argument("--force", action="store_true", help="Force reprovision even if verified")
+    _add_output_args(models_setup_parser)
+    models_setup_parser.set_defaults(func=_cmd_models_setup)
+
+    models_verify_parser = models_sub.add_parser("verify", help="Verify a model's runtime with health check")
+    models_verify_parser.add_argument("model_name", nargs="?", help="Model name (rule_set_2, rule_set_3, doench_2014)")
+    models_verify_parser.add_argument("--all", action="store_true", help="Verify all models")
+    _add_output_args(models_verify_parser)
+    models_verify_parser.set_defaults(func=_cmd_models_verify)
 
     # --- genome ---
     genome_parser = subparsers.add_parser("genome", help="Genome management")

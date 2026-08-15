@@ -32,6 +32,12 @@ from mcp.tools.cas_offinder_search import cas_offinder_search
 from mcp.tools.analyze_mismatch_seed import analyze_mismatch_seed
 from mcp.tools.compute_cut_site import compute_cut_site
 from mcp.tools.predict_ontarget_efficiency import predict_ontarget_efficiency_tool
+from mcp.tools.model_runtime import (
+    models_list_runtimes_tool,
+    model_status_tool,
+    setup_model_tool,
+    verify_model_tool,
+)
 from mcp.schemas import PAMSiteRow
 
 # ---------------------------------------------------------------------------
@@ -140,6 +146,30 @@ TOOL_REGISTRY: dict[str, dict] = {
         "description": "Predict on-target SpCas9 efficiency (Rule Set 2 / Rule Set 3). Distinguishes from off-target specificity (CFD).",
         "cost": "cheap / deterministic",
         "tier": 1,
+    },
+    "models_list_runtimes": {
+        "function": models_list_runtimes_tool,
+        "description": "List all model runtime states (provisioning/verification status).",
+        "cost": "cheap",
+        "tier": 1,
+    },
+    "model_status": {
+        "function": model_status_tool,
+        "description": "Get detailed runtime status for a specific model.",
+        "cost": "cheap",
+        "tier": 1,
+    },
+    "setup_model": {
+        "function": setup_model_tool,
+        "description": "Provision an isolated runtime for a model (creates venv, installs deps). May be expensive. Only modifies project-local data/model_envs/.",
+        "cost": "expensive / setup",
+        "tier": 2,
+    },
+    "verify_model": {
+        "function": verify_model_tool,
+        "description": "Run health check verification on a model runtime. Required before auto-eligibility.",
+        "cost": "moderate",
+        "tier": 2,
     },
 }
 

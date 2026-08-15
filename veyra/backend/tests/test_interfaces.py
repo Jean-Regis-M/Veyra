@@ -166,7 +166,7 @@ class TestToolsInterfaceParity(unittest.TestCase):
         """Test Python API tools list via MCP server."""
         from mcp.server import TOOL_REGISTRY
 
-        self.assertEqual(len(TOOL_REGISTRY), 17)
+        self.assertEqual(len(TOOL_REGISTRY), 21)
         self.assertIn("pam_scan", TOOL_REGISTRY)
         self.assertIn("offtarget_search", TOOL_REGISTRY)
         self.assertIn("compute_gc_content", TOOL_REGISTRY)
@@ -178,6 +178,10 @@ class TestToolsInterfaceParity(unittest.TestCase):
         self.assertIn("compute_seed_gc", TOOL_REGISTRY)
         self.assertIn("cas_offinder_search", TOOL_REGISTRY)
         self.assertIn("analyze_mismatch_seed", TOOL_REGISTRY)
+        self.assertIn("models_list_runtimes", TOOL_REGISTRY)
+        self.assertIn("model_status", TOOL_REGISTRY)
+        self.assertIn("setup_model", TOOL_REGISTRY)
+        self.assertIn("verify_model", TOOL_REGISTRY)
 
     def test_cli_tools_list(self):
         """Test CLI tools list."""
@@ -195,7 +199,7 @@ class TestToolsInterfaceParity(unittest.TestCase):
         response = client.get("/tools")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["total_tools"], 17)
+        self.assertEqual(data["total_tools"], 21)
 
 
 class TestCLIOutputFormats(unittest.TestCase):
@@ -1233,7 +1237,7 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
         self.assertEqual(result.summary["model_used"], "doench_2014")
         self.assertEqual(result.summary["selection_status"], "selected")
         self.assertIn("ontarget_score_doench_2014", result.summary)
-        self.assertEqual(result.summary["confidence_flag"], "ok")
+        self.assertEqual(result.summary["confidence_flag"], "fallback")
 
     def test_python_api_ontarget_both(self):
         """Test Python API predict_ontarget_efficiency with both (alias for auto)."""
@@ -1398,9 +1402,251 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
                         http_data["summary"]["model_used"])
 
         # All should have the same fallback chain
-        self.assertEqual(api_result.summary["fallback_chain"], 
+        self.assertEqual(api_result.summary["fallback_chain"],
                         core_result.summary["fallback_chain"])
-        self.assertEqual(api_result.summary["fallback_chain"], 
+        self.assertEqual(api_result.summary["fallback_chain"],
                         mcp_result.summary["fallback_chain"])
-        self.assertEqual(api_result.summary["fallback_chain"], 
+        self.assertEqual(api_result.summary["fallback_chain"],
                         http_data["summary"]["fallback_chain"])
+
+
+class TestModelRuntimeProvisioning(unittest.TestCase):
+    """Test model runtime provisioning system."""
+
+    def test_get_model_spec(self):
+        """Test getting model specification."""
+        from core.model_runtime import get_model_spec
+
+        spec = get_model_spec("rule_set_2")
+        self.assertIsNotNone(spec)
+        self.assertEqual(spec["model_id"], "rule_set_2")
+        self.assertIn("dependency_spec", spec)
+        self.assertIn("verification_case", spec)
+
+        spec = get_model_spec("doench_2014")
+        self.assertIsNotNone(spec)
+        self.assertEqual(spec["model_id"], "doench_2014")
+
+        spec = get_model_spec("unknown_model")
+        self.assertIsNone(spec)
+
+    def test_get_model_status(self):
+        """Test getting model runtime status."""
+        from core.model_runtime import get_model_status
+
+        status = get_model_status("doench_2014")
+        self.assertIn("state", status)
+        self.assertIn("runtime_path", status)
+        self.assertIn("runtime_action", status)
+
+    def test_list_model_runtimes(self):
+        """Test listing all model runtimes."""
+        from core.model_runtime import list_model_runtimes
+
+        runtimes = list_model_runtimes()
+        self.assertEqual(len(runtimes), 3)
+        model_ids = [r["model_id"] for r in runtimes]
+        self.assertIn("rule_set_3", model_ids)
+        self.assertIn("rule_set_2", model_ids)
+        self.assertIn("doench_2014", model_ids)
+
+    def test_doench_2014_always_verified(self):
+        """Test that Doench 2014 is always verified (pure Python, no runtime needed)."""
+        from core.model_runtime import get_model_status, RuntimeState
+        from core.model_registry import get_model_info
+
+        info = get_model_info("doench_2014")
+        self.assertTrue(info.verified)
+        self.assertEqual(info.availability, "verified")
+
+    def test_provision_doench_2014(self):
+        """Test provisioning Doench 2014 (no-op)."""
+        from core.model_runtime import provision_model
+
+        result = provision_model("doench_2014")
+        self.assertEqual(result["action"], "no_provisioning_needed")
+
+    def test_verify_model(self):
+        """Test model verification."""
+        from core.model_runtime import verify_model
+
+        result = verify_model("doench_2014")
+        self.assertEqual(result["verification_status"], "pass")
+
+    def test_verify_unknown_model(self):
+        """Test verification of unknown model."""
+        from core.model_runtime import verify_model
+
+        result = verify_model("invalid_model")
+        self.assertIn("error", result)
+
+    def test_provision_unknown_model(self):
+        """Test provisioning unknown model."""
+        from core.model_runtime import provision_model
+
+        result = provision_model("invalid_model")
+        self.assertIn("error", result)
+
+    def test_runtime_state_constants(self):
+        """Test RuntimeState constants."""
+        from core.model_runtime import RuntimeState
+
+        self.assertEqual(RuntimeState.NOT_PROVISIONED, "not_provisioned")
+        self.assertEqual(RuntimeState.PROVISIONED, "provisioned")
+        self.assertEqual(RuntimeState.VERIFIED, "verified")
+        self.assertEqual(RuntimeState.INCOMPATIBLE, "incompatible")
+
+    def test_cli_models_setup_doench_2014(self):
+        """Test CLI models setup for Doench 2014."""
+        from cli.main import main
+
+        exit_code = main([
+            "models", "setup", "doench_2014",
+            "--output-format", "json",
+        ])
+        self.assertEqual(exit_code, 0)
+
+    def test_cli_models_verify_doench_2014(self):
+        """Test CLI models verify for Doench 2014."""
+        from cli.main import main
+
+        exit_code = main([
+            "models", "verify", "doench_2014",
+            "--output-format", "json",
+        ])
+        self.assertEqual(exit_code, 0)
+
+    def test_cli_models_setup_unknown(self):
+        """Test CLI models setup with unknown model."""
+        from cli.main import main
+
+        exit_code = main([
+            "models", "setup", "invalid_model",
+            "--output-format", "json",
+        ])
+        self.assertEqual(exit_code, 1)
+
+    def test_cli_models_setup_all(self):
+        """Test CLI models setup --all (expects non-zero since rule_set_2/3 fail)."""
+        from cli.main import main
+
+        exit_code = main([
+            "models", "setup", "--all",
+            "--output-format", "json",
+        ])
+        # Should fail because rule_set_2 and rule_set_3 cannot be provisioned
+        # in this environment (dependency conflicts), only doench_2014 succeeds
+        self.assertEqual(exit_code, 1)
+
+
+class TestModelRuntimeHTTPAPI(unittest.TestCase):
+    """Test model runtime management HTTP API endpoints."""
+
+    def _get_client(self):
+        from http_api.app import app
+        from fastapi.testclient import TestClient
+        return TestClient(app)
+
+    def test_http_get_models(self):
+        """Test GET /models endpoint."""
+        client = self._get_client()
+        response = client.get("/models")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("models", data)
+        model_ids = [m["model_id"] for m in data["models"]]
+        self.assertIn("rule_set_2", model_ids)
+        self.assertIn("rule_set_3", model_ids)
+        self.assertIn("doench_2014", model_ids)
+
+    def test_http_get_model_doench_2014(self):
+        """Test GET /models/{model_id} for doench_2014."""
+        client = self._get_client()
+        response = client.get("/models/doench_2014")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["model_id"], "doench_2014")
+        self.assertTrue(data["verified"])
+
+    def test_http_get_model_unknown(self):
+        """Test GET /models/{model_id} for unknown model."""
+        client = self._get_client()
+        response = client.get("/models/invalid_model")
+        self.assertEqual(response.status_code, 404)
+
+    def test_http_verify_model(self):
+        """Test POST /models/{model_id}/verify."""
+        client = self._get_client()
+        response = client.post("/models/doench_2014/verify")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+
+    def test_http_model_status(self):
+        """Test GET /models/{model_id}/status."""
+        client = self._get_client()
+        response = client.get("/models/doench_2014/status")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("state", data)
+
+    def test_http_setup_model(self):
+        """Test POST /models/{model_id}/setup."""
+        client = self._get_client()
+        response = client.post("/models/doench_2014/setup")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+
+
+class TestModelRuntimeMCP(unittest.TestCase):
+    """Test model runtime management MCP tools."""
+
+    def test_mcp_models_list_runtimes(self):
+        """Test MCP models_list_runtimes tool."""
+        from mcp.tools.model_runtime import models_list_runtimes_tool
+
+        result = models_list_runtimes_tool()
+        self.assertEqual(result.tool, "models_list_runtimes")
+        self.assertIn("runtimes", result.summary)
+        self.assertEqual(len(result.summary["runtimes"]), 3)
+
+    def test_mcp_model_status(self):
+        """Test MCP model_status tool."""
+        from mcp.tools.model_runtime import model_status_tool
+
+        result = model_status_tool("doench_2014")
+        self.assertEqual(result.tool, "model_status")
+        self.assertEqual(result.summary["model_id"], "doench_2014")
+        self.assertIn("status", result.summary)
+
+    def test_mcp_model_status_unknown(self):
+        """Test MCP model_status for unknown model."""
+        from mcp.tools.model_runtime import model_status_tool
+
+        result = model_status_tool("invalid_model")
+        self.assertTrue(result.errors)
+
+    def test_mcp_setup_model(self):
+        """Test MCP setup_model tool."""
+        from mcp.tools.model_runtime import setup_model_tool
+
+        result = setup_model_tool("doench_2014")
+        self.assertEqual(result.tool, "setup_model")
+        self.assertEqual(result.summary["model_id"], "doench_2014")
+
+    def test_mcp_verify_model(self):
+        """Test MCP verify_model tool."""
+        from mcp.tools.model_runtime import verify_model_tool
+
+        result = verify_model_tool("doench_2014")
+        self.assertEqual(result.tool, "verify_model")
+        self.assertEqual(result.summary["model_id"], "doench_2014")
+        self.assertEqual(result.summary["result"]["verification_status"], "pass")
+
+    def test_mcp_verify_unknown_model(self):
+        """Test MCP verify_model for unknown model."""
+        from mcp.tools.model_runtime import verify_model_tool
+
+        result = verify_model_tool("invalid_model")
+        self.assertTrue(result.errors)
