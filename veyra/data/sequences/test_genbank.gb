@@ -1,0 +1,32 @@
+LOCUS       VEYRA_TEST1              200 bp    DNA     linear   UNK 01-JAN-2024
+DEFINITION  Test CRISPR target sequence for VEYRA validation.
+ACCESSION   VEYRA_TEST1
+VERSION     VEYRA_TEST1.1
+KEYWORDS    CRISPR; Cas9; PAM.
+SOURCE      Synthetic construct.
+  ORGANISM  Synthetic construct.
+            .; other sequences; artificial sequences.
+FEATURES             Location/Qualifiers
+     source          1..200
+                     /organism="Synthetic construct"
+                     /mol_type="genomic DNA"
+                     /db_xref="taxon:32630"
+     guideRNA        1..20
+                     /gene="sgRNA1"
+                     /product="CRISPR guide RNA target"
+     PAM             21..23
+                     /label="NGG_PAM"
+                     /note="SpCas9 PAM site"
+     gene            50..150
+                     /gene="targetGene"
+                     /note="Gene containing CRISPR target"
+     CDS             50..150
+                     /gene="targetGene"
+                     /product="target protein"
+                     /codon_start=1
+ORIGIN
+        1 atcgatcgat cgatcgatcga ggatcgatcg atcgatcgatc gatcgatcgat cgatcgatcga
+       61 tcgatcgatc gatcgatcgat cgatcgatcga tctagctagc tagctagctag ctagctagcta
+      121 gctagctagc tagctagctag ctagctagcta gctagctagct agctagctagc tagctagctag
+      181 ctagctagcta gctagctag
+//

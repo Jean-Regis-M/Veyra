@@ -1,0 +1,10 @@
+>multi_seq_1 first sequence in multi-record file
+ACGTACGTACGTACGT
+>multi_seq_2 second sequence
+GCTAGCTAGCTAGCTA
+>multi_seq_3 third sequence
+AAAAAAAAAAAAAAAA
+>multi_seq_4 fourth
+CCCCCCCCCCCCCCCC
+>multi_seq_5 fifth
+TTTTTTTTTTTTTTTT
