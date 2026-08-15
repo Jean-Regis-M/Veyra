@@ -92,3 +92,5 @@ veyra/data/tools/cas-offinder/
 # Model runtime environments (provisioned at runtime)
 veyra/data/model_envs/
 backend/cache/model_runtime/
+veyra/cache/
+veyra/mcp/
