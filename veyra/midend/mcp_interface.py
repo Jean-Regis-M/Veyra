@@ -44,9 +44,34 @@ async def skill_metadata(skill_id: str) -> dict[str, Any]:
     return get_skill(skill_id).describe()
 
 
+async def skill_status(skill_id: str) -> dict[str, Any]:
+    skill = get_skill(skill_id)
+    status = getattr(skill, "model_status", None)
+    return status() if status else {"skill": skill.describe(), "status": "available"}
+
+
 async def execute_skill(skill_id: str, request: dict[str, Any]) -> dict[str, Any]:
     execution = control_plane.create_skill_execution(skill_id, request)
     return {"execution_id": execution.execution_id, "skill": skill_id, "status": "started"}
+
+
+async def calibration_status() -> dict[str, Any]:
+    from .skills.offtarget_toxicity_risk import COEFFICIENT_REGISTRY
+    calib_inputs = control_plane.inputs.list_calibration_inputs()
+    return {
+        "registered_datasets_count": len(calib_inputs),
+        "datasets": [item.public() for item in calib_inputs],
+        "coefficient_models": [model.public() for model in COEFFICIENT_REGISTRY.values()],
+        "status": "available",
+    }
+
+
+async def calibration_metadata(calibration_id: str) -> dict[str, Any]:
+    return control_plane.inputs.get_calibration_input(calibration_id).public()
+
+
+async def list_calibration_datasets() -> dict[str, Any]:
+    return {"calibration_datasets": [item.public() for item in control_plane.inputs.list_calibration_inputs()]}
 
 
 MIDEND_MCP_CAPABILITIES = {
@@ -57,5 +82,9 @@ MIDEND_MCP_CAPABILITIES = {
     "execution_status": execution_status,
     "list_skills": list_skills,
     "skill_metadata": skill_metadata,
+    "skill_status": skill_status,
     "execute_skill": execute_skill,
+    "calibration_status": calibration_status,
+    "calibration_metadata": calibration_metadata,
+    "list_calibration_datasets": list_calibration_datasets,
 }

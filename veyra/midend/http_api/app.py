@@ -68,6 +68,8 @@ class AIChatBody(BaseModel):
     backend_connector: str | None = None
     stream: bool = False
     input_ids: list[str] = Field(default_factory=list)
+    analysis_input_id: str | None = None
+    calibration_input_id: str | None = None
 
 
 class ExecutionBody(BaseModel):
@@ -78,11 +80,22 @@ class ExecutionBody(BaseModel):
     provider_id: str | None = None
     model: str | None = None
     input_ids: list[str] = Field(default_factory=list)
+    analysis_input_id: str | None = None
+    analysis_input: str | None = None
+    calibration_input_id: str | None = None
+    calibration_input: str | None = None
+    calibration_id: str | None = None
 
 
 class SkillExecutionBody(BaseModel):
     sequence: str | None = None
+    spacer_sequence: str | None = None
     input_id: str | None = None
+    analysis_input_id: str | None = None
+    analysis_input: str | None = None
+    calibration_input_id: str | None = None
+    calibration_input: str | None = None
+    calibration_id: str | None = None
     genome_id: str | None = None
     chrom: str | None = None
     start: int | None = None
@@ -94,7 +107,17 @@ class SkillExecutionBody(BaseModel):
     max_mismatches: int = Field(default=4, ge=0, le=10)
     max_results: int = Field(default=1000, ge=1, le=100000)
     offtarget_backend: str = "bwa"
+    backend: str = "bwa"
+    features: dict[str, Any] = Field(default_factory=dict)
+    coefficients: dict[str, Any] | None = None
+    coefficient_model_id: str = "offtarget_toxicity_prototype"
     connector: str | None = None
+    target_column: str | None = None
+    guide_column: str | None = None
+    sh_column: str | None = None
+    binding_column: str | None = None
+    ca_column: str | None = None
+    derive_features: bool = True
 
 
 app = FastAPI(title="VEYRA MIDEND", version="0.1.0")
@@ -149,12 +172,56 @@ async def upload_input_file(request: Request):
         return _input_error(exc)
 
 
+@app.post("/calibration/file", status_code=201)
+@app.post("/inputs/calibration", status_code=201)
+async def upload_calibration_file(request: Request):
+    try:
+        filename, content, content_type = await _extract_multipart_file(request)
+        item = validate_input_file(filename, content, content_type, expected_class="calibration_input")
+        control_plane.inputs.add(item)
+        return item.public()
+    except MIDENDInputError as exc:
+        return _input_error(exc)
+
+
 @app.get("/inputs/{input_id}")
 async def get_validated_input(input_id: str):
     try:
         return control_plane.inputs.get(input_id).public()
     except MIDENDInputError as exc:
         return _input_error(exc)
+
+
+@app.get("/calibration/status")
+async def get_calibration_status():
+    from ..skills.offtarget_toxicity_risk import COEFFICIENT_REGISTRY
+    calib_inputs = control_plane.inputs.list_calibration_inputs()
+    return {
+        "registered_datasets_count": len(calib_inputs),
+        "datasets": [item.public() for item in calib_inputs],
+        "coefficient_models": [model.public() for model in COEFFICIENT_REGISTRY.values()],
+        "status": "available",
+    }
+
+
+@app.get("/calibration/{calibration_id}")
+async def get_calibration_dataset(calibration_id: str):
+    try:
+        return control_plane.inputs.get_calibration_input(calibration_id).public()
+    except MIDENDInputError as exc:
+        return _input_error(exc)
+
+
+@app.post("/calibration/run", status_code=202)
+async def run_calibration_explicit(request: SkillExecutionBody):
+    try:
+        payload = request.model_dump(exclude_none=True)
+        execution = control_plane.create_skill_execution("model_calibration", payload)
+    except SkillError as exc:
+        raise HTTPException(status_code=422, detail=exc.to_dict()) from None
+    except MIDENDInputError as exc:
+        return _input_error(exc)
+    return {"execution_id": execution.execution_id, "skill": "model_calibration", "status": "started"}
 
 
 @app.get("/health")
@@ -299,6 +366,16 @@ async def get_midend_skill(skill_id: str) -> dict[str, Any]:
         return get_skill(skill_id).describe()
     except SkillError as exc:
         raise HTTPException(status_code=404, detail=exc.to_dict()) from None
+
+
+@app.get("/skills/{skill_id}/status")
+async def get_midend_skill_status(skill_id: str) -> dict[str, Any]:
+    try:
+        skill = get_skill(skill_id)
+    except SkillError as exc:
+        raise HTTPException(status_code=404, detail=exc.to_dict()) from None
+    status = getattr(skill, "model_status", None)
+    return status() if status else {"skill": skill.describe(), "status": "available"}
 
 
 @app.post("/skills/{skill_id}", status_code=202)

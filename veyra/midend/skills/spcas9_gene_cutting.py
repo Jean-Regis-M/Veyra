@@ -34,6 +34,7 @@ class SpCas9GeneCuttingSkill(Skill):
             "required": True,
         }],
         optional_inputs=[
+            {"name": "calibration_input_id", "type": "string", "default": None},
             {"name": "depth", "type": "string", "default": "quick", "allowed": ["quick", "full"]},
             {"name": "strand", "type": "string", "default": "both", "allowed": ["both", "fwd", "rev"]},
             {"name": "chrom", "type": "string", "default": None},
@@ -54,6 +55,7 @@ class SpCas9GeneCuttingSkill(Skill):
         },
         validation_rules=[
             "Exactly one of sequence, input_id, or complete genomic region is required.",
+            "calibration_input is OPTIONAL. Gene-cutting works normally with only analysis input.",
             "Sequence input must be non-empty DNA/IUPAC text; candidate feature tools require concrete A/C/G/T guides.",
             "Genomic regions use 1-based half-open [start, end) coordinates.",
             "depth must be quick or full; full requires genome_id for off-target search.",
@@ -63,14 +65,14 @@ class SpCas9GeneCuttingSkill(Skill):
 
     def validate(self, request: dict[str, Any], control_plane: Any) -> None:
         sequence = request.get("sequence")
-        input_id = request.get("input_id")
+        input_id = request.get("input_id") or request.get("analysis_input_id") or request.get("analysis_input")
         region_fields = [request.get(key) for key in ("chrom", "start", "end")]
         has_region = any(value is not None for value in region_fields)
         modes = int(sequence is not None) + int(input_id is not None) + int(has_region)
         if modes != 1:
             raise SkillError("invalid_skill_input", "Provide exactly one of sequence, input_id, or genome_id/chrom/start/end.")
         if input_id:
-            control_plane.inputs.get(input_id)
+            control_plane.inputs.get_analysis_input(input_id)
         if sequence is not None:
             if not isinstance(sequence, str) or not sequence.strip():
                 raise SkillError("empty_sequence", "Sequence input must be non-empty.", "sequence")
@@ -83,6 +85,13 @@ class SpCas9GeneCuttingSkill(Skill):
                 raise SkillError("invalid_region", "start must be an integer >= 1.", "start")
             if not isinstance(request["end"], int) or request["end"] <= request["start"]:
                 raise SkillError("invalid_region", "end must be greater than start.", "end")
+        calib_id = (
+            request.get("calibration_input_id")
+            or request.get("calibration_input")
+            or request.get("calibration_id")
+        )
+        if calib_id:
+            control_plane.inputs.get_calibration_input(calib_id)
         depth = request.get("depth", "quick")
         if depth not in {"quick", "full"}:
             raise SkillError("invalid_depth", "depth must be 'quick' or 'full'.", "depth")
@@ -99,7 +108,8 @@ class SpCas9GeneCuttingSkill(Skill):
     def _records(control_plane: Any, request: dict[str, Any]) -> list[tuple[str | None, str]]:
         if request.get("sequence"):
             return [(request.get("chrom"), "".join(request["sequence"].split()).upper())]
-        item = control_plane.inputs.get(request["input_id"])
+        input_id = request.get("input_id") or request.get("analysis_input_id") or request.get("analysis_input")
+        item = control_plane.inputs.get_analysis_input(input_id)
         fmt = {"fasta": "fasta", "fastq": "fastq", "genbank": "genbank"}[item.detected_format]
         records = list(SeqIO.parse(StringIO(item._content.decode("utf-8")), fmt))
         return [(record.id, str(record.seq).upper()) for record in records]

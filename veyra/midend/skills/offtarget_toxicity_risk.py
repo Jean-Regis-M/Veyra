@@ -18,6 +18,16 @@ from .base import Skill, SkillError, SkillMetadata
 EPSILON_DEFAULT = 1e-3
 FEATURE_DEFINITION_VERSION = "offtarget-toxicity-v1-audited"
 
+VALID_CALIBRATION_STATUSES = {
+    "not_provided",
+    "unavailable",
+    "uncalibrated",
+    "user_supplied",
+    "calibrated",
+    "external_calibration",
+    "externally_validated",
+}
+
 
 class RiskModelError(ValueError):
     pass
@@ -39,14 +49,14 @@ class CoefficientModel:
     metrics: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.calibration_status not in {"uncalibrated", "calibrated", "user_supplied", "external_calibration"}:
-            raise RiskModelError("invalid calibration_status")
+        if self.calibration_status not in VALID_CALIBRATION_STATUSES:
+            raise RiskModelError(f"invalid calibration_status '{self.calibration_status}'")
         if not math.isfinite(self.epsilon) or self.epsilon <= 0:
             raise RiskModelError("epsilon must be finite and greater than zero")
         for value in (self.alpha, self.beta, self.gamma):
             if value is not None and not math.isfinite(value):
                 raise RiskModelError("coefficients must be finite numbers")
-        if self.calibration_status == "calibrated" and (not self.dataset or not self.metrics):
+        if self.calibration_status in {"calibrated", "externally_validated"} and (not self.dataset or not self.metrics):
             raise RiskModelError("calibrated models require dataset and metrics")
 
     def public(self) -> dict[str, Any]:
@@ -66,6 +76,10 @@ COEFFICIENT_REGISTRY: dict[str, CoefficientModel] = {
         calibration_status="uncalibrated",
     )
 }
+
+
+def register_coefficient_model(model: CoefficientModel) -> None:
+    COEFFICIENT_REGISTRY[model.model_id] = model
 
 
 def stable_logistic(z: float) -> float:
@@ -138,6 +152,7 @@ class OfftargetToxicityRiskSkill(Skill):
         version="1.0.0",
         required_inputs=[{"name": "spacer_sequence", "type": "string", "required": True}],
         optional_inputs=[
+            {"name": "calibration_input_id", "type": "string", "default": None},
             {"name": "genome_id", "type": "string", "default": None},
             {"name": "features", "type": "object", "default": {}},
             {"name": "coefficients", "type": "object", "default": None},
@@ -145,18 +160,36 @@ class OfftargetToxicityRiskSkill(Skill):
             {"name": "max_mismatches", "type": "integer", "default": 4, "minimum": 0, "maximum": 10},
         ],
         allowed_tools=["offtarget_search", "cas_offinder_search", "analyze_mismatch_seed", "score_offtargets"],
-        workflow=["validate guide and explicit feature inputs", "collect optional off-target evidence",
-                  "mark exact scientific feature availability", "apply audited formula only when complete",
-                  "return calibration and provenance"],
+        workflow=["validate guide, optional calibration input, and explicit feature inputs",
+                  "collect optional off-target evidence",
+                  "mark exact scientific feature availability",
+                  "apply audited formula or calibrated fit only when complete",
+                  "return calibration status, metrics, and provenance"],
         output_schema={"status": "complete|partial|prototype|unavailable", "validated": "boolean",
-                       "toxicity_risk": "number|null", "features": "object", "contributions": "object"},
+                       "toxicity_risk": "number|null", "features": "object", "contributions": "object",
+                       "calibration": "object"},
         validation_rules=[
             "spacer_sequence must be concrete A/C/G/T and 15-30 nt.",
+            "calibration_input is OPTIONAL. Skill functions normally without calibration data.",
             "Sh, delta_g_binding, and Ca are never inferred from CFD, guide MFE, or model attention.",
             "delta_g_binding must be finite and <= 0 when supplied.",
             "calibrated is only valid with identified dataset and metrics.",
         ],
     )
+
+    def model_status(self) -> dict[str, Any]:
+        return {
+            "model": self.metadata.skill_id,
+            "formula_version": FEATURE_DEFINITION_VERSION,
+            "formula": "T=100*stable_logistic(alpha*Sh + beta*B + gamma*Ca)",
+            "binding_transform": "B=abs(delta_g_binding)/(abs(delta_g_binding)+epsilon)",
+            "feature_availability": {
+                "Sh": {"available": False, "source": None, "reason": "No exact full-locus mismatch-penalty feature in current backend."},
+                "delta_g_binding": {"available": False, "source": None, "reason": "No gRNA-DNA hybridization free-energy provider."},
+                "Ca": {"available": False, "source": None, "reason": "No calibrated chromatin-accessibility provider."},
+            },
+            "coefficient_models": [model.public() for model in COEFFICIENT_REGISTRY.values()],
+        }
 
     def validate(self, request: dict[str, Any], control_plane: Any) -> None:
         guide = request.get("spacer_sequence")
@@ -167,13 +200,30 @@ class OfftargetToxicityRiskSkill(Skill):
         max_mismatches = request.get("max_mismatches", 4)
         if not isinstance(max_mismatches, int) or not 0 <= max_mismatches <= 10:
             raise SkillError("invalid_max_mismatches", "max_mismatches must be between 0 and 10.", "max_mismatches")
+        calib_id = (
+            request.get("calibration_input_id")
+            or request.get("calibration_input")
+            or request.get("calibration_id")
+        )
+        if calib_id:
+            control_plane.inputs.get_calibration_input(calib_id)
 
     @staticmethod
-    def _coefficient_model(request: dict[str, Any]) -> CoefficientModel:
+    def _coefficient_model(request: dict[str, Any], control_plane: Any = None) -> CoefficientModel:
+        calib_id = (
+            request.get("calibration_input_id")
+            or request.get("calibration_input")
+            or request.get("calibration_id")
+        )
+        if calib_id:
+            model_key = f"calibrated_{calib_id}"
+            if model_key in COEFFICIENT_REGISTRY:
+                return COEFFICIENT_REGISTRY[model_key]
+
         supplied = request.get("coefficients")
         if supplied is None:
-            return COEFFICIENT_REGISTRY.get(request.get("coefficient_model_id", "offtarget_toxicity_prototype"),
-                                            COEFFICIENT_REGISTRY["offtarget_toxicity_prototype"])
+            model_id = request.get("coefficient_model_id", "offtarget_toxicity_prototype")
+            return COEFFICIENT_REGISTRY.get(model_id, COEFFICIENT_REGISTRY["offtarget_toxicity_prototype"])
         required = ("alpha", "beta", "gamma")
         if any(key not in supplied for key in required):
             raise SkillError("invalid_coefficients", "coefficients must contain alpha, beta, and gamma.", "coefficients")
@@ -199,7 +249,16 @@ class OfftargetToxicityRiskSkill(Skill):
         errors: list[str] = []
         provenance: list[str] = []
         features = request.get("features") or {}
-        model = self._coefficient_model(request)
+
+        calib_id = (
+            request.get("calibration_input_id")
+            or request.get("calibration_input")
+            or request.get("calibration_id")
+        )
+        if calib_id:
+            provenance.append(f"calibration_dataset:{calib_id}")
+
+        model = self._coefficient_model(request, control_plane)
 
         feature_values = {
             "Sh": self._feature_record(features.get("Sh"), "user_supplied" if "Sh" in features else "unavailable",
@@ -207,12 +266,30 @@ class OfftargetToxicityRiskSkill(Skill):
             "delta_g_binding": self._feature_record(features.get("delta_g_binding"), "user_supplied" if "delta_g_binding" in features else "unavailable",
                                                      "user_request" if "delta_g_binding" in features else None),
             "Ca": self._feature_record(features.get("Ca"), "user_supplied" if "Ca" in features else "unavailable",
-                                       "user_request" if "Ca" in features else None),
+                                        "user_request" if "Ca" in features else None),
         }
 
         # Existing backend search is useful evidence, but it does not define
         # Sh. Its presence is recorded without converting it to a feature.
         if request.get("genome_id"):
+            genome = await call_tool("genome_info", {"genome_id": request["genome_id"]})
+            provenance.append("genome_info")
+            if genome.errors:
+                warnings.extend(genome.errors)
+                calib_status = model.calibration_status if calib_id or request.get("coefficients") else "not_provided"
+                return {
+                    "model": self.metadata.skill_id, "status": "partial", "validated": False,
+                    "toxicity_risk": None, "linear_score": None, "logistic_score": None,
+                    "features": feature_values,
+                    "feature_transforms": {},
+                    "contributions": {"sequence": None, "binding": None, "accessibility": None},
+                    "coefficients": model.public(),
+                    "calibration": {"status": calib_status, "model_id": model.model_id,
+                                    "dataset": model.dataset, "dataset_version": model.dataset_version,
+                                    "metrics": model.metrics},
+                    "provenance": provenance, "warnings": warnings,
+                    "errors": ["genome_unavailable"],
+                }
             result = await call_tool("offtarget_search", {
                 "spacer_sequence": guide, "genome_id": request["genome_id"],
                 "pam_pattern": "NGG", "max_mismatches": request.get("max_mismatches", 4),
@@ -240,13 +317,21 @@ class OfftargetToxicityRiskSkill(Skill):
         except RiskModelError as exc:
             errors.append(str(exc))
 
-        validated = bool(calculation and model.calibration_status in {"calibrated", "external_calibration"})
+        validated = bool(calculation and model.calibration_status in {"calibrated", "external_calibration", "externally_validated"})
         if calculation:
             status = "complete" if validated else "prototype"
         else:
             status = "partial" if provenance else "unavailable"
         if not validated:
             warnings.append("This result is unvalidated/prototype; no labeled calibration dataset and fit metrics establish validity.")
+
+        calib_status = model.calibration_status
+        if not calib_id and request.get("coefficients") is None and model.model_id == "offtarget_toxicity_prototype":
+            if status == "unavailable":
+                calib_status = "not_provided"
+            else:
+                calib_status = "uncalibrated"
+
         result = {
             "model": self.metadata.skill_id, "status": status, "validated": validated,
             "toxicity_risk": calculation["toxicity_risk"] if calculation else None,
@@ -260,7 +345,7 @@ class OfftargetToxicityRiskSkill(Skill):
             },
             "contributions": calculation["contributions"] if calculation else {"sequence": None, "binding": None, "accessibility": None},
             "coefficients": model.public(),
-            "calibration": {"status": model.calibration_status, "model_id": model.model_id,
+            "calibration": {"status": calib_status, "model_id": model.model_id,
                             "dataset": model.dataset, "dataset_version": model.dataset_version,
                             "metrics": model.metrics},
             "provenance": provenance,

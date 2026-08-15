@@ -3,6 +3,14 @@
 The FastAPI app is available as `veyra.midend.http_api.app:app`. State is
 process-local and is intended for an active MIDEND instance.
 
+Input management endpoints:
+- `POST /inputs/file`: uploads and validates analysis input (FASTA, FASTQ, GenBank) or calibration input (CSV, TSV).
+- `POST /calibration/file` (or `POST /inputs/calibration`): uploads and validates calibration CSV/TSV datasets.
+- `GET /inputs/{id}`: returns validated input metadata.
+- `GET /calibration/{id}`: returns validated calibration dataset metadata.
+- `GET /calibration/status`: returns registered datasets, coefficient models, and calibration status.
+- `POST /calibration/run`: explicitly runs deterministic model calibration workflow on a registered CSV/TSV dataset.
+
 AI control endpoints are `GET /ai/status`, `GET/POST /ai/providers`,
 `GET/POST /ai/active`, `POST /ai/test`, and `POST /ai/chat`. Provider responses
 contain IDs, models, availability, and timing only; credentials are never

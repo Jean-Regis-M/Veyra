@@ -186,6 +186,9 @@ class ExecutionState:
     provider: str | None = None
     model: str | None = None
     validated_inputs: list[dict[str, Any]] = field(default_factory=list)
+    analysis_input: dict[str, Any] | None = None
+    calibration_input: dict[str, Any] | None = None
+    calibration_status: str = "not_provided"
     reasoning_active: bool = False
     generation_active: bool = False
     assistant_output: str | None = None
@@ -210,6 +213,9 @@ class ExecutionState:
                 "reasoning_active": self.reasoning_active, "generation_active": self.generation_active,
                 "connector": self.connector, "provider": self.provider, "model": self.model,
                 "validated_inputs": safe_value(self.validated_inputs),
+                "analysis_input": safe_value(self.analysis_input),
+                "calibration_input": safe_value(self.calibration_input),
+                "calibration_status": self.calibration_status,
                 "assistant_output": self.assistant_output, "deterministic_evidence": safe_value(self.deterministic_evidence),
                 "skill_result": safe_value(self.skill_result),
                 "tool_calls": [c.public() for c in self.tool_calls],
@@ -295,15 +301,55 @@ class ControlPlane:
             self.providers.select(payload["provider_id"], payload.get("model"))
         identifier = new_id("exec")
         provider = self.providers.active()
+
         input_items = [self.inputs.get(input_id) for input_id in payload.get("input_ids", [])]
+
+        # Explicit analysis / calibration input handling
+        analysis_item = None
+        analysis_id = payload.get("analysis_input_id") or payload.get("analysis_input")
+        if analysis_id:
+            analysis_item = self.inputs.get_analysis_input(analysis_id)
+            if analysis_item not in input_items:
+                input_items.append(analysis_item)
+
+        calibration_item = None
+        calibration_id = (
+            payload.get("calibration_input_id")
+            or payload.get("calibration_input")
+            or payload.get("calibration_id")
+        )
+        if calibration_id:
+            calibration_item = self.inputs.get_calibration_input(calibration_id)
+            if calibration_item not in input_items:
+                input_items.append(calibration_item)
+
+        # Distinguish from input_ids list if not explicitly provided
+        for item in input_items:
+            if item.input_class == "analysis_input" and analysis_item is None:
+                analysis_item = item
+            elif item.input_class == "calibration_input" and calibration_item is None:
+                calibration_item = item
+
+        calib_status = "not_provided"
+        if calibration_item:
+            calib_status = calibration_item.calibration_status or "user_supplied"
+
         all_calls = list(payload.get("tool_calls", []))
         all_calls.extend(call for group in payload.get("parallel_groups", []) for call in group.get("calls", []))
         for call in all_calls:
             if any(key.lower() in {"path", "file_path", "filepath", "input_path"} for key in call.get("arguments", {})):
                 raise MIDENDInputError("unreadable_file", "Tool calls must reference validated input IDs, not filesystem paths.")
-        execution = ExecutionState(identifier, connector=payload.get("connector") or self.active_connector,
-                                   provider=provider.provider_id, model=payload.get("model") or self.providers.active_model,
-                                   validated_inputs=[item.public() for item in input_items])
+
+        execution = ExecutionState(
+            identifier,
+            connector=payload.get("connector") or self.active_connector,
+            provider=provider.provider_id,
+            model=payload.get("model") or self.providers.active_model,
+            validated_inputs=[item.public() for item in input_items],
+            analysis_input=analysis_item.public() if analysis_item else None,
+            calibration_input=calibration_item.public() if calibration_item else None,
+            calibration_status=calib_status,
+        )
         self.executions[identifier] = execution
         if conversation_id:
             self.conversations.get(conversation_id)["execution_ids"].append(identifier)
@@ -317,8 +363,48 @@ class ControlPlane:
         skill.validate(payload, self)
         identifier = new_id("exec")
         provider = self.providers.active()
-        execution = ExecutionState(identifier, connector=payload.get("connector") or self.active_connector,
-                                   provider=provider.provider_id, model=payload.get("model") or self.providers.active_model)
+
+        analysis_item = None
+        analysis_id = payload.get("input_id") or payload.get("analysis_input_id") or payload.get("analysis_input")
+        if analysis_id:
+            try:
+                item = self.inputs.get(analysis_id)
+                if item.input_class == "analysis_input":
+                    analysis_item = item
+            except Exception:
+                pass
+
+        calibration_item = None
+        calib_id = (
+            payload.get("calibration_input_id")
+            or payload.get("calibration_input")
+            or payload.get("calibration_id")
+        )
+        if calib_id:
+            calibration_item = self.inputs.get_calibration_input(calib_id)
+
+        calib_status = "not_provided"
+        if calibration_item:
+            calib_status = calibration_item.calibration_status or "user_supplied"
+        elif skill_id in {"model_calibration", "calibration"}:
+            calib_status = "uncalibrated"
+
+        inputs_list = []
+        if analysis_item:
+            inputs_list.append(analysis_item.public())
+        if calibration_item:
+            inputs_list.append(calibration_item.public())
+
+        execution = ExecutionState(
+            identifier,
+            connector=payload.get("connector") or self.active_connector,
+            provider=provider.provider_id,
+            model=payload.get("model") or self.providers.active_model,
+            validated_inputs=inputs_list,
+            analysis_input=analysis_item.public() if analysis_item else None,
+            calibration_input=calibration_item.public() if calibration_item else None,
+            calibration_status=calib_status,
+        )
         self.executions[identifier] = execution
         task = asyncio.create_task(self._run_skill(execution, skill, payload))
         self._tasks.add(task)

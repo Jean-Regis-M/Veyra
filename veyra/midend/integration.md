@@ -49,9 +49,22 @@ tool schema.
 | `default_model` | string | required for provider add | Non-empty and present in the effective model list. |
 | `persist` | boolean | optional, `false` | `true` is rejected with `secure_persistence_unavailable`; plaintext key persistence is disabled. |
 
-### Validated input metadata
+### Validated input metadata and input classes
 
-`POST /inputs/file` returns:
+The MIDEND supports two independent input classes:
+
+1. `analysis_input`:
+   - Target gene / sequence / FASTA / FASTQ / GenBank / genomic region.
+   - Formats: FASTA (`.fa`, `.fasta`, `.fna`, `.faa`, `.fns`, `.frn`), FASTQ (`.fq`, `.fastq`, `.fqr`), GenBank (`.gb`, `.gbk`, `.gbff`, `.genbank`).
+   - Used for normal analysis workflows.
+
+2. `calibration_input`:
+   - Optional experimental labeled tabular dataset.
+   - Formats: CSV (`.csv`), TSV (`.tsv`, `.tab`).
+   - Used for optional statistical model calibration and evidence improvement.
+   - **CRITICAL RULE**: `calibration_input` is **OPTIONAL**. Normal VEYRA workflows (PAM scanning, gene cutting, cut-site geometry, sequence features, on-target prediction, off-target search, CFD scoring, candidate ranking) never require calibration data.
+
+`POST /inputs/file` returns metadata for either class:
 
 ```json
 {
@@ -59,6 +72,7 @@ tool schema.
   "filename": "target.fasta",
   "format": "fasta",
   "detected_format": "fasta",
+  "input_class": "analysis_input",
   "size_bytes": 42,
   "record_count": 3,
   "sequence_count": 3,
@@ -67,17 +81,44 @@ tool schema.
 }
 ```
 
-Accepted upload formats are the formats implemented by the backend parsers:
+For calibration datasets (via `POST /inputs/file` or `POST /calibration/file`), it returns:
 
-- FASTA: `.fa`, `.fasta`, `.fna`, `.faa`, `.fns`, `.frn`
-- FASTQ: `.fq`, `.fastq`, `.fqr`
-- GenBank: `.gb`, `.gbk`, `.gbff`, `.genbank`
+```json
+{
+  "input_id": "calib_123",
+  "filename": "dataset.csv",
+  "format": "csv",
+  "detected_format": "csv",
+  "input_class": "calibration_input",
+  "size_bytes": 1024,
+  "record_count": 100,
+  "row_count": 100,
+  "sample_count": 100,
+  "column_count": 5,
+  "columns": ["guide", "target", "sh", "delta_g_binding", "ca"],
+  "validation_status": "valid",
+  "calibration_status": "uncalibrated",
+  "backend_operation": "calibration"
+}
+```
 
 The upload limit is 50 MiB. Content must be valid UTF-8, the extension and
-detected content must agree, records must parse, and sequences must be
-non-empty valid nucleotide data. GFF/GFF3 and plain DNA `.txt` uploads are not
-currently supported. Validated input IDs, not paths, are used by AI and
-execution requests.
+detected content must agree. Tabular files (.csv, .tsv) must have non-empty
+headers, consistent columns across all data rows, and at least 1 data row.
+Invalid inputs return structured validation errors. Validated input IDs, not
+paths, are used by AI and execution requests.
+
+### Calibration status states
+
+The MIDEND explicitly distinguishes these calibration states:
+- `not_provided`: No calibration dataset was supplied in the request. Normal workflows continue normally.
+- `unavailable`: Calibration was requested but the dataset or required feature columns are unavailable.
+- `uncalibrated`: Model contains baseline/prototype coefficients without experimental dataset fit.
+- `user_supplied`: User provided explicit manual coefficient values without dataset fitting.
+- `calibrated`: Deterministic statistical fitting was performed on a validated labeled experimental dataset with computed metrics (R², MSE, MAE, sample counts).
+- `externally_validated`: Registered model with published external benchmark dataset and fit metrics.
+
+A model is never marked "validated" merely because a CSV was uploaded. No coefficients are fabricated.
 
 ### Execution tool call shapes
 
@@ -123,22 +164,48 @@ surfaces, not additional MIDEND operations.
 
 Request: `multipart/form-data`; the first part with a filename is used. The
 filename is required, must be a basename with no `/`, `\\`, `..`, or NUL, and
-the part content is bounded by the 50 MiB limit. The optional MIME type is only
-a hint; actual content is always parsed.
+the part content is bounded by the 50 MiB limit. Accepts analysis files (FASTA,
+FASTQ, GenBank) and calibration datasets (CSV, TSV).
 
-Success: HTTP `201`, validated input metadata above. No backend or AI call is
-made.
+Success: HTTP `201`, validated input metadata above.
 
-Errors: HTTP `400` with
-`{"error":"...","message":"...","field":"file"}`. Codes include
-`unsupported_file_type`, `malformed_file`, `mismatched_file_format`,
-`empty_file`, `invalid_sequence_format`, `file_too_large`, `path_traversal`,
-and `unreadable_file`.
+Errors: HTTP `400` with `{"error":"...","message":"...","field":"file"}`.
+Codes include `unsupported_file_type`, `unsupported_calibration_format`,
+`malformed_file`, `mismatched_file_format`, `empty_file`, `empty_dataset`,
+`inconsistent_columns`, `missing_header`, `invalid_sequence_format`,
+`file_too_large`, `path_traversal`, and `unreadable_file`.
+
+#### `POST /calibration/file` (or `POST /inputs/calibration`)
+
+Request: `multipart/form-data`; expects a `.csv` or `.tsv` tabular dataset.
+Validates UTF-8, non-empty header, consistent column lengths across all rows,
+and at least 1 data row.
+
+Success: HTTP `201`, validated calibration metadata.
+
+Errors: HTTP `400` with structured validation error (`empty_dataset`,
+`inconsistent_columns`, `missing_header`, `unsupported_calibration_format`, etc.).
 
 #### `GET /inputs/{input_id}`
 
 Path `input_id: string`, required. Returns the same validated metadata as the
 upload. Unknown IDs return HTTP `400` with `error: "unknown_input"`.
+
+#### `GET /calibration/{calibration_id}`
+
+Path `calibration_id: string`, required. Returns metadata for a validated
+calibration dataset. Unknown IDs return HTTP `400` with `error: "unknown_calibration_input"`.
+
+#### `GET /calibration/status`
+
+No arguments. Returns registered dataset counts, datasets list, registered
+coefficient models, and calibration availability.
+
+#### `POST /calibration/run`
+
+Starts an explicit deterministic calibration workflow on a registered CSV/TSV dataset.
+Request body: `{ "calibration_input_id": "calib_123", ... }`.
+Returns HTTP `202` with `{ "execution_id": "exec_...", "skill": "model_calibration", "status": "started" }`.
 
 ## AI provider and chat endpoints
 
@@ -260,7 +327,7 @@ as ordinary executions.
 ### `GET /skills`
 
 No arguments. Returns `{skills: array<SkillMetadata>}`. The current registry
-contains `spcas9_gene_cutting`.
+contains `spcas9_gene_cutting`, `offtarget_toxicity_risk`, and `model_calibration`.
 
 ### `GET /skills/{skill_id}`
 
@@ -268,6 +335,24 @@ Path `skill_id: string`, required. Returns metadata containing `skill_id`,
 `name`, `description`, `version`, `required_inputs`, `optional_inputs`,
 `allowed_tools`, `workflow`, `output_schema`, and `validation_rules`.
 Unknown skills return HTTP `404`.
+
+### `model_calibration` skill
+
+`POST /skills/model_calibration` runs explicit calibration on a labeled CSV/TSV
+dataset. It normalizes rows, maps experimental columns, obtains backend sequence
+features where available, performs deterministic least-squares fitting of
+statistical model parameters ($\alpha, \beta, \gamma, \epsilon$), computes
+rigorous metrics ($R^2$, MSE, MAE, Pearson $r$), and returns a structured
+calibration report and AI review summary. The raw dataset rows are never given
+to the AI reasoning layer unnecessarily.
+
+### `GET /skills/{skill_id}/status`
+
+Returns skill-specific model status without starting execution. For
+`offtarget_toxicity_risk`, this includes the formula version, audited binding
+transform, exact availability/reason for `Sh`, `delta_g_binding`, and `Ca`, and
+registered coefficient/calibration metadata. It contains no claim that the
+model is validated.
 
 ### `POST /skills/{skill_id}`
 
@@ -333,6 +418,37 @@ unavailable. `partial` never means that missing evidence was treated as zero.
 Skill events include `skill_started`, `candidate_discovered`,
 `candidate_evaluated`, `ranking_completed`, `skill_completed`, and
 `skill_failed`, in addition to ordinary tool-call events.
+
+### `offtarget_toxicity_risk` request
+
+`POST /skills/offtarget_toxicity_risk` uses the existing skill execution body
+with these skill-specific fields:
+
+| Field | Type | Required/default | Restrictions |
+|---|---|---|---|
+| `spacer_sequence` | string | required | 15–30 concrete A/C/G/T bases. |
+| `genome_id` | string/null | optional | Existing off-target evidence may be collected; it is not converted to `Sh`. |
+| `features` | object | optional, `{}` | Explicit optional `Sh`, `delta_g_binding`, and `Ca`; no inferred substitutes. |
+| `coefficients` | object/null | optional, null | Requires finite `alpha`, `beta`, `gamma`; optional finite positive `epsilon`. |
+| `coefficient_model_id` | string | optional, `offtarget_toxicity_prototype` | Uses registered coefficient metadata. |
+| `max_mismatches` | integer | optional, `4` | 0–10 for optional off-target search. |
+
+The audited formula is `B=abs(delta_g_binding)/(abs(delta_g_binding)+epsilon)`,
+`z=alpha*Sh+beta*B+gamma*Ca`, and `T=100*stable_logistic(z)`. `Sh` is a
+mismatch penalty, `B` is bounded binding stability, and `Ca` is accessibility.
+Expected fitted signs are alpha negative, beta positive, and gamma positive,
+but signs are learned calibration parameters and are not hard-coded.
+
+The result exposes feature availability, individual contributions, linear and
+logistic scores, toxicity risk, formula/coefficient/calibration metadata,
+warnings, errors, and provenance. Missing `Sh`, binding DeltaG, or Ca yields
+`unavailable`/`partial` and a null score. Explicit features plus user
+coefficients yield `prototype`, `validated: false`. Only calibrated metadata
+with an identified dataset and fit metrics can produce `validated: true`.
+
+The frontend must never map CFD or mismatch count to Sh, guide MFE to binding
+DeltaG, or attention to Ca. Positive DeltaG, non-finite values, non-positive
+epsilon, invalid coefficients, and invalid guide sequences must be rejected.
 
 #### `GET /backend/status`
 
@@ -483,7 +599,11 @@ counterparts:
 | `execution_status` | `execution_id: string`, required | Same execution status object as `GET /executions/{execution_id}`; unknown ID raises `KeyError`. |
 | `list_skills` | none | Same skill list as `GET /skills`. |
 | `skill_metadata` | `skill_id: string`, required | Same metadata as `GET /skills/{skill_id}`. |
+| `skill_status` | `skill_id: string`, required | Skill-specific formula, feature-availability, and calibration status. |
 | `execute_skill` | `skill_id: string`, `request: object`, required | Starts the same skill execution as `POST /skills/{skill_id}` and returns its execution ID. |
+| `calibration_status` | none | Calibration registry status and registered coefficient models. |
+| `calibration_metadata` | `calibration_id: string`, required | Dataset metadata for validated CSV/TSV calibration input. |
+| `list_calibration_datasets` | none | List of all registered calibration datasets. |
 
 There are currently no MCP operations for provider mutation, model selection,
 connector selection, file upload, execution creation, tool-call inspection,
