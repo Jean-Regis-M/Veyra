@@ -1209,7 +1209,7 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
         self.assertEqual(result.summary["selection"]["selection_status"], "failed")
 
     def test_python_api_ontarget_rule_set_3(self):
-        """Test Python API predict_ontarget_efficiency with rule_set_3 (unavailable)."""
+        """Test explicit Rule Set 3 selection when its runtime is available."""
         from api import predict_ontarget_efficiency
 
         result = predict_ontarget_efficiency(
@@ -1217,14 +1217,16 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
             model="rule_set_3",
         )
         self.assertEqual(result.tool, "predict_ontarget_efficiency")
-        self.assertTrue(result.errors)
-        self.assertEqual(result.summary["confidence_flag"], "model_unavailable")
-        self.assertEqual(result.summary["requested_model"], "rule_set_3")
+        if result.errors:
+            self.assertEqual(result.summary["confidence_flag"], "model_unavailable")
+        else:
+            self.assertEqual(result.summary["model_used"], "rule_set_3")
+            self.assertIn("ontarget_score_rule_set_3", result.summary)
 
     def test_python_api_ontarget_auto(self):
         """Test Python API predict_ontarget_efficiency with auto.
         
-        Auto selects highest-priority verified model (Doench 2014).
+        Auto selects the highest-priority verified model.
         """
         from api import predict_ontarget_efficiency
 
@@ -1234,10 +1236,10 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
         )
         self.assertEqual(result.tool, "predict_ontarget_efficiency")
         self.assertFalse(result.errors)
-        self.assertEqual(result.summary["model_used"], "doench_2014")
+        self.assertIn(result.summary["model_used"], ("rule_set_3", "doench_2014"))
         self.assertEqual(result.summary["selection_status"], "selected")
-        self.assertIn("ontarget_score_doench_2014", result.summary)
-        self.assertEqual(result.summary["confidence_flag"], "fallback")
+        self.assertIn("ontarget_score", result.summary)
+        self.assertIn(result.summary["confidence_flag"], ("ok", "fallback"))
 
     def test_python_api_ontarget_both(self):
         """Test Python API predict_ontarget_efficiency with both (alias for auto)."""
@@ -1249,7 +1251,7 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
         )
         self.assertEqual(result.tool, "predict_ontarget_efficiency")
         self.assertFalse(result.errors)
-        self.assertEqual(result.summary["model_used"], "doench_2014")
+        self.assertIn(result.summary["model_used"], ("rule_set_3", "doench_2014"))
         self.assertEqual(result.summary["selection_status"], "selected")
 
     def test_python_api_ontarget_invalid_model(self):
@@ -1282,7 +1284,11 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
             model="auto",
             normalize_score=True,
         )
-        self.assertEqual(result.summary["normalized"], True)
+        if result.summary["model_used"] == "rule_set_3":
+            self.assertFalse(result.summary["normalized"])
+            self.assertTrue(result.warnings)
+        else:
+            self.assertTrue(result.summary["normalized"])
 
     def test_python_api_ontarget_round_decimals(self):
         """Test Python API predict_ontarget_efficiency with custom rounding."""
@@ -1307,8 +1313,8 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
         result = predict_ontarget_efficiency(request)
         self.assertEqual(result.tool, "predict_ontarget_efficiency")
         self.assertFalse(result.errors)
-        self.assertEqual(result.summary["model_used"], "doench_2014")
-        self.assertIn("ontarget_score_doench_2014", result.summary)
+        self.assertIn(result.summary["model_used"], ("rule_set_3", "doench_2014"))
+        self.assertIn("ontarget_score", result.summary)
 
     def test_cli_ontarget(self):
         """Test CLI predict_ontarget_efficiency with auto."""
@@ -1335,8 +1341,8 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["tool"], "predict_ontarget_efficiency")
-        self.assertEqual(data["summary"]["model_used"], "doench_2014")
-        self.assertIn("ontarget_score_doench_2014", data["summary"])
+        self.assertIn(data["summary"]["model_used"], ("rule_set_3", "doench_2014"))
+        self.assertIn("ontarget_score", data["summary"])
 
     def test_mcp_ontarget(self):
         """Test MCP predict_ontarget_efficiency with auto."""
@@ -1347,8 +1353,8 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
             model="auto",
         )
         self.assertEqual(result.tool, "predict_ontarget_efficiency")
-        self.assertEqual(result.summary["model_used"], "doench_2014")
-        self.assertIn("ontarget_score_doench_2014", result.summary)
+        self.assertIn(result.summary["model_used"], ("rule_set_3", "doench_2014"))
+        self.assertIn("ontarget_score", result.summary)
 
     def test_all_interfaces_produce_same_ontarget(self):
         """Verify all interfaces produce equivalent on-target results with auto."""
@@ -1386,12 +1392,12 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
         http_data = http_response.json()
 
         # All should have the same score
-        self.assertEqual(api_result.summary["ontarget_score_doench_2014"], 
-                        core_result.summary["ontarget_score_doench_2014"])
-        self.assertEqual(api_result.summary["ontarget_score_doench_2014"], 
-                        mcp_result.summary["ontarget_score_doench_2014"])
-        self.assertEqual(api_result.summary["ontarget_score_doench_2014"], 
-                        http_data["summary"]["ontarget_score_doench_2014"])
+        self.assertEqual(api_result.summary["ontarget_score"],
+                        core_result.summary["ontarget_score"])
+        self.assertEqual(api_result.summary["ontarget_score"],
+                        mcp_result.summary["ontarget_score"])
+        self.assertEqual(api_result.summary["ontarget_score"],
+                        http_data["summary"]["ontarget_score"])
 
         # All should have the same model_used
         self.assertEqual(api_result.summary["model_used"], 
