@@ -19,6 +19,7 @@ try:  # Supports both ``import http_api`` from midend and ``import veyra.midend`
     from ..connectors import get_backend_connector
     from ..control_plane import AIConfigError as ControlAIConfigError, control_plane, register_secret
     from ..input_validation import MAX_INPUT_BYTES, MIDENDInputError, validate_input_file
+    from ..skills import SkillError, get_skill, list_skills
 except ImportError:  # pragma: no cover - compatibility for the existing source layout
     from ai.errors import AIProviderNotConfiguredError, AIProviderError
     from ai.models import AIMessage
@@ -28,6 +29,7 @@ except ImportError:  # pragma: no cover - compatibility for the existing source 
     from connectors import get_backend_connector
     from control_plane import AIConfigError as ControlAIConfigError, control_plane, register_secret
     from input_validation import MAX_INPUT_BYTES, MIDENDInputError, validate_input_file
+    from skills import SkillError, get_skill, list_skills
 
 
 class AIConfigRequest(BaseModel):
@@ -76,6 +78,23 @@ class ExecutionBody(BaseModel):
     provider_id: str | None = None
     model: str | None = None
     input_ids: list[str] = Field(default_factory=list)
+
+
+class SkillExecutionBody(BaseModel):
+    sequence: str | None = None
+    input_id: str | None = None
+    genome_id: str | None = None
+    chrom: str | None = None
+    start: int | None = None
+    end: int | None = None
+    strand: str = "both"
+    depth: str = "quick"
+    model: str = "auto"
+    max_candidates: int = Field(default=100, ge=1, le=1000)
+    max_mismatches: int = Field(default=4, ge=0, le=10)
+    max_results: int = Field(default=1000, ge=1, le=100000)
+    offtarget_backend: str = "bwa"
+    connector: str | None = None
 
 
 app = FastAPI(title="VEYRA MIDEND", version="0.1.0")
@@ -267,6 +286,33 @@ async def select_backend(request: BackendActiveRequest) -> dict[str, Any]:
 @app.get("/tools")
 async def list_backend_tools() -> dict[str, Any]:
     return await control_plane.tools()
+
+
+@app.get("/skills")
+async def list_midend_skills() -> dict[str, Any]:
+    return {"skills": list_skills()}
+
+
+@app.get("/skills/{skill_id}")
+async def get_midend_skill(skill_id: str) -> dict[str, Any]:
+    try:
+        return get_skill(skill_id).describe()
+    except SkillError as exc:
+        raise HTTPException(status_code=404, detail=exc.to_dict()) from None
+
+
+@app.post("/skills/{skill_id}", status_code=202)
+async def execute_midend_skill(skill_id: str, request: SkillExecutionBody) -> dict[str, Any]:
+    try:
+        payload = request.model_dump(exclude_none=True)
+        if payload.get("connector") and payload["connector"] not in {"http", "mcp"}:
+            raise SkillError("invalid_connector", "connector must be 'http' or 'mcp'.", "connector")
+        execution = control_plane.create_skill_execution(skill_id, payload)
+    except SkillError as exc:
+        raise HTTPException(status_code=422, detail=exc.to_dict()) from None
+    except MIDENDInputError as exc:
+        return _input_error(exc)
+    return {"execution_id": execution.execution_id, "skill": skill_id, "status": "started"}
 
 
 @app.post("/executions", status_code=202)

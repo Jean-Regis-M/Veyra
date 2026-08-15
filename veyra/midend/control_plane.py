@@ -28,6 +28,7 @@ try:
     from .config.settings import get_settings
     from .connectors import get_backend_connector
     from .input_validation import InputRegistry, MIDENDInputError
+    from .skills.registry import get_skill
 except ImportError:  # pragma: no cover
     from ai.errors import AIProviderError, AIProviderNotConfiguredError
     from ai.models import AIMessage
@@ -36,6 +37,7 @@ except ImportError:  # pragma: no cover
     from config.settings import get_settings
     from connectors import get_backend_connector
     from input_validation import InputRegistry, MIDENDInputError
+    from skills.registry import get_skill
 
 
 def now_iso() -> str:
@@ -193,6 +195,7 @@ class ExecutionState:
     parallel_groups: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    skill_result: dict[str, Any] | None = None
     event_history: list[dict[str, Any]] = field(default_factory=list)
     subscribers: list[asyncio.Queue] = field(default_factory=list, repr=False)
 
@@ -208,6 +211,7 @@ class ExecutionState:
                 "connector": self.connector, "provider": self.provider, "model": self.model,
                 "validated_inputs": safe_value(self.validated_inputs),
                 "assistant_output": self.assistant_output, "deterministic_evidence": safe_value(self.deterministic_evidence),
+                "skill_result": safe_value(self.skill_result),
                 "tool_calls": [c.public() for c in self.tool_calls],
                 "errors": self.errors, "warnings": self.warnings}
 
@@ -308,6 +312,19 @@ class ControlPlane:
         task.add_done_callback(self._tasks.discard)
         return execution
 
+    def create_skill_execution(self, skill_id: str, payload: dict[str, Any]) -> ExecutionState:
+        skill = get_skill(skill_id)
+        skill.validate(payload, self)
+        identifier = new_id("exec")
+        provider = self.providers.active()
+        execution = ExecutionState(identifier, connector=payload.get("connector") or self.active_connector,
+                                   provider=provider.provider_id, model=payload.get("model") or self.providers.active_model)
+        self.executions[identifier] = execution
+        task = asyncio.create_task(self._run_skill(execution, skill, payload))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return execution
+
     async def _emit(self, execution: ExecutionState, event: str, **data: Any) -> None:
         item = {"event_id": new_id("event"), "event": event, "execution_id": execution.execution_id,
                 "timestamp": now_iso(), **safe_value(data)}
@@ -368,12 +385,13 @@ class ControlPlane:
         execution.tool_calls.append(state)
         return state
 
-    async def _run_call(self, execution: ExecutionState, call: dict[str, Any], state: ToolCallState | None = None) -> None:
+    async def _run_call(self, execution: ExecutionState, call: dict[str, Any], state: ToolCallState | None = None):
         state = state or self._make_call(execution, call)
         state.status, state.started_at = "running", now_iso()
         await self._emit(execution, "tool_call_started", call=state.public())
         started = time.perf_counter()
         event_name = "tool_call_failed"
+        result = None
         try:
             connector = get_backend_connector(execution.connector)
             result = await connector.call_tool(state.tool, state.arguments)
@@ -383,11 +401,58 @@ class ControlPlane:
             state.status = "completed" if state.success else "failed"
             event_name = "tool_call_completed" if state.success else "tool_call_failed"
             execution.deterministic_evidence.append(state.result)
-        except Exception:
-            state.status, state.errors = "failed", ["tool call failed"]
+        except Exception as exc:
+            # Keep connector diagnostics useful while still redacting any
+            # accidentally surfaced secret-shaped value.
+            state.status, state.errors = "failed", [safe_value(str(exc))]
         finally:
             state.finished_at, state.duration_ms = now_iso(), (time.perf_counter() - started) * 1000
             await self._emit(execution, event_name, call=state.public())
+        return result
+
+    async def _run_skill(self, execution: ExecutionState, skill: Any, payload: dict[str, Any]) -> None:
+        started = time.perf_counter()
+        execution.status, execution.started_at = "running", now_iso()
+        self.providers.current_execution_id = execution.execution_id
+        await self._emit(execution, "skill_started", skill=skill.metadata.skill_id, phase="input_validation")
+
+        async def call_tool(tool: str, arguments: dict[str, Any]):
+            result = await self._run_call(execution, {"tool": tool, "arguments": arguments})
+            if result is None:
+                # _run_call returns None only after an unexpected connector
+                # exception; the recorded call state remains the evidence.
+                raise RuntimeError(f"tool '{tool}' did not return a result")
+            return result
+
+        async def emit(event: str, **data: Any):
+            await self._emit(execution, event, skill=skill.metadata.skill_id, **data)
+
+        try:
+            execution.skill_result = await skill.execute(payload, control_plane=self,
+                                                         call_tool=call_tool, emit=emit)
+            execution.deterministic_evidence.append(safe_value(execution.skill_result))
+            execution.status = "completed" if execution.skill_result.get("status") == "complete" else "waiting"
+            await self._emit(execution, "skill_completed", skill=skill.metadata.skill_id,
+                             status=execution.skill_result.get("status"),
+                             candidate_count=len(execution.skill_result.get("candidates", [])))
+            if execution.status == "waiting":
+                execution.status = "completed"
+            await self._emit(execution, "execution_completed", skill=skill.metadata.skill_id)
+        except Exception as exc:
+            execution.status = "failed"
+            if hasattr(exc, "code"):
+                execution.errors.append(str(exc.code))
+            else:
+                execution.errors.append("skill_execution_failed")
+            await self._emit(execution, "skill_failed", skill=skill.metadata.skill_id, errors=execution.errors)
+            await self._emit(execution, "execution_failed", errors=execution.errors)
+        finally:
+            execution.finished_at, execution.elapsed_ms = now_iso(), (time.perf_counter() - started) * 1000
+            if self.providers.current_execution_id == execution.execution_id:
+                self.providers.current_execution_id = None
+            await self._emit(execution, "execution_finished", elapsed_ms=execution.elapsed_ms)
+            for queue in list(execution.subscribers):
+                await queue.put(None)
 
     async def _run_ai(self, execution: ExecutionState, request: dict[str, Any], conversation_id: str | None) -> None:
         record = self.providers.active()

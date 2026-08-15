@@ -251,6 +251,89 @@ above; no AI call is made for an invalid input reference.
 
 ## Backend and tool endpoints
 
+## Skills
+
+Skills are process-local orchestration profiles. They delegate all biological
+calculations to the live backend tools and use the same execution/event state
+as ordinary executions.
+
+### `GET /skills`
+
+No arguments. Returns `{skills: array<SkillMetadata>}`. The current registry
+contains `spcas9_gene_cutting`.
+
+### `GET /skills/{skill_id}`
+
+Path `skill_id: string`, required. Returns metadata containing `skill_id`,
+`name`, `description`, `version`, `required_inputs`, `optional_inputs`,
+`allowed_tools`, `workflow`, `output_schema`, and `validation_rules`.
+Unknown skills return HTTP `404`.
+
+### `POST /skills/{skill_id}`
+
+Starts an asynchronous skill execution and returns HTTP `202`:
+`{execution_id, skill, status: "started"}`. Follow the normal execution
+status and SSE endpoints using the returned ID.
+
+Current request fields:
+
+| Field | Type | Required/default | Restrictions |
+|---|---|---|---|
+| `sequence` | string/null | one input mode required | Non-empty IUPAC DNA when supplied. |
+| `input_id` | string/null | one input mode required | Must be a validated FASTA/FASTQ/GenBank input ID. |
+| `genome_id` | string/null | required with region mode | Must be registered for region/full analysis. |
+| `chrom` | string/null | required with region mode | Non-empty chromosome/contig identifier. |
+| `start` | integer/null | required with region mode | ≥ 1; 1-based half-open coordinate. |
+| `end` | integer/null | required with region mode | Greater than `start`; exclusive. |
+| `strand` | string | optional, `both` | `both`, `fwd`, or `rev`. |
+| `depth` | string | optional, `quick` | `quick` or `full`; full requires `genome_id`. |
+| `model` | string | optional, `auto` | `auto`, `both`, `rule_set_3`, `rule_set_2`, or `doench_2014`. |
+| `max_candidates` | integer | optional, `100` | 1–1000. |
+| `max_mismatches` | integer | optional, `4` | 0–10; used by full off-target search. |
+| `max_results` | integer | optional, `1000` | 1–100000; used by full off-target search. |
+| `offtarget_backend` | string | optional, `bwa` | Backend contract allows `bwa` or `cas_offinder`; availability is reported by the tool. |
+| `connector` | string/null | optional, active connector | `http` or `mcp`. |
+
+Exactly one of `sequence`, `input_id`, or complete region fields is required.
+The frontend must reject malformed input before calling, but the MIDEND remains
+the authoritative validator. Invalid requests return HTTP `422` with a
+structured skill error. No backend or AI call starts for invalid skill input.
+
+The execution’s `skill_result` contains:
+
+```json
+{
+  "skill": "spcas9_gene_cutting",
+  "status": "complete|partial|failed",
+  "candidates": [{
+    "candidate_id": "candidate_1",
+    "chrom": null,
+    "strand": "-",
+    "pam": "AGG",
+    "pam_start": 7,
+    "pam_end": 10,
+    "protospacer": "...",
+    "cut_site": {"relative": 17, "genomic": null},
+    "features": {},
+    "ontarget": {"score": null, "model": null},
+    "specificity": {"offtarget_count": null, "worst_cfd": null},
+    "rank": null,
+    "cutting_site_string": "sequence | cut=relative=17 | - | PAM=AGG | guide=...",
+    "provenance": [],
+    "warnings": []
+  }],
+  "warnings": [],
+  "errors": []
+}
+```
+
+`cutting_site_string` is display-only; the structured object is authoritative.
+Scores and coordinates are absent/null when their backend evidence is
+unavailable. `partial` never means that missing evidence was treated as zero.
+Skill events include `skill_started`, `candidate_discovered`,
+`candidate_evaluated`, `ranking_completed`, `skill_completed`, and
+`skill_failed`, in addition to ordinary tool-call events.
+
 #### `GET /backend/status`
 
 No arguments. Returns `{active_connector, available_connectors,
@@ -398,6 +481,9 @@ counterparts:
 | `backend_status` | none | Same object as `GET /backend/status`. |
 | `list_tools` | none | Same live tool discovery object as `GET /tools`. |
 | `execution_status` | `execution_id: string`, required | Same execution status object as `GET /executions/{execution_id}`; unknown ID raises `KeyError`. |
+| `list_skills` | none | Same skill list as `GET /skills`. |
+| `skill_metadata` | `skill_id: string`, required | Same metadata as `GET /skills/{skill_id}`. |
+| `execute_skill` | `skill_id: string`, `request: object`, required | Starts the same skill execution as `POST /skills/{skill_id}` and returns its execution ID. |
 
 There are currently no MCP operations for provider mutation, model selection,
 connector selection, file upload, execution creation, tool-call inspection,
@@ -434,3 +520,9 @@ Before each call, enforce these exact rules:
    deterministic backend calculation.
 10. Map HTTP and MCP operations to the same UI semantics and do not assume MCP
     supports operations absent from the current registry.
+11. Before `POST /skills/{skill_id}` or MCP `execute_skill`, allow exactly one
+    input mode, enforce `strand`, `depth`, range, and candidate limits, and
+    require `genome_id` for `full` depth.
+12. Treat a skill result as computational prediction only. Never render it as
+    experimentally confirmed cleavage, and never replace null/unavailable
+    evidence with zero or an estimated value.
