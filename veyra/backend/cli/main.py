@@ -166,6 +166,9 @@ def _cmd_offtarget_search(args):
         chrom=args.chrom,
         start=args.start,
         end=args.end,
+        strand_search=args.strand_search,
+        max_results=args.max_results,
+        device=args.device,
     )
     result = offtarget_search(request)
     return _output_result(result, args)
@@ -229,6 +232,76 @@ def _cmd_rank(args):
         sort_by=args.sort_by,
     )
     result = rank_candidates(request)
+    return _output_result(result, args)
+
+
+def _cmd_score_ontarget(args):
+    """Handle score on-target command."""
+    from core.ontarget import predict_ontarget_efficiency
+    from schemas.canonical import ComputeOnTargetEfficiencyRequest
+
+    request = ComputeOnTargetEfficiencyRequest(
+        context_sequence=args.context_sequence,
+        model=args.model,
+        context_upstream=args.context_upstream,
+        context_downstream=args.context_downstream,
+        spacer_length=args.spacer_length,
+        normalize_score=args.normalize_score,
+        round_decimals=args.round_decimals,
+    )
+    result = predict_ontarget_efficiency(request)
+    return _output_result(result, args)
+
+
+def _cmd_models_list(args):
+    """Handle models list command."""
+    from core.model_registry import get_model_registry
+    from schemas.canonical import VeyraResult
+
+    registry = get_model_registry()
+    models = []
+    for model_id, info in registry.items():
+        models.append(info.to_dict())
+
+    result = VeyraResult(
+        tool="models_list",
+        summary={"total_models": len(models), "models": models},
+    )
+    return _output_result(result, args)
+
+
+def _cmd_models_describe(args):
+    """Handle models describe command."""
+    from core.model_registry import get_model_info
+    from schemas.canonical import VeyraResult
+
+    info = get_model_info(args.model_name)
+    if not info:
+        print(f"Error: unknown model: {args.model_name}", file=sys.stderr)
+        print("Available models: rule_set_2, rule_set_3, doench_2014", file=sys.stderr)
+        return 1
+
+    result = VeyraResult(
+        tool="models_describe",
+        summary=info.to_dict(),
+    )
+    return _output_result(result, args)
+
+
+def _cmd_models_check(args):
+    """Handle models check command."""
+    from core.model_registry import get_model_registry, get_model_fallback_info
+    from schemas.canonical import VeyraResult
+
+    registry = get_model_registry()
+    models = []
+    for model_id in ["rule_set_3", "rule_set_2", "doench_2014"]:
+        models.append(get_model_fallback_info(model_id))
+
+    result = VeyraResult(
+        tool="models_check",
+        summary={"models": models},
+    )
     return _output_result(result, args)
 
 
@@ -622,6 +695,12 @@ def _build_parser():
     search_parser.add_argument("--chrom", default=None, help="Chromosome (for region scope)")
     search_parser.add_argument("--start", type=int, default=None, help="Start position (for region scope)")
     search_parser.add_argument("--end", type=int, default=None, help="End position (for region scope)")
+    search_parser.add_argument("--strand-search", default="both", choices=["both", "fwd", "rev"],
+                               help="Filter by strand: both, fwd (+), or rev (-)")
+    search_parser.add_argument("--max-results", type=int, default=1000,
+                               help="Maximum results to return")
+    search_parser.add_argument("--device", default="auto", choices=["auto", "cpu"],
+                               help="Execution device (auto or cpu)")
     _add_output_args(search_parser)
     search_parser.set_defaults(func=_cmd_offtarget_search)
 
@@ -642,6 +721,38 @@ def _build_parser():
                             choices=["composite", "cfd_max", "offtarget_count", "on_target"])
     _add_output_args(rank_parser)
     rank_parser.set_defaults(func=_cmd_rank)
+
+    # --- score ---
+    score_parser = subparsers.add_parser("score", help="Score/efficiency prediction")
+    score_sub = score_parser.add_subparsers(dest="score_command", help="Score commands")
+
+    score_ontarget_parser = score_sub.add_parser("on-target", help="Predict on-target efficiency")
+    score_ontarget_parser.add_argument("--context-sequence", "-s", required=True, help="Context sequence (upstream + spacer + PAM + downstream)")
+    score_ontarget_parser.add_argument("--model", default="auto", choices=["auto", "rule_set_2", "rule_set_3", "doench_2014", "both"], help="Model to use (auto = highest-priority verified model)")
+    score_ontarget_parser.add_argument("--context-upstream", type=int, default=4, help="Upstream context length")
+    score_ontarget_parser.add_argument("--context-downstream", type=int, default=3, help="Downstream context length")
+    score_ontarget_parser.add_argument("--spacer-length", type=int, default=20, help="Spacer length")
+    score_ontarget_parser.add_argument("--normalize-score", action="store_true", help="Normalize score to [0,1]")
+    score_ontarget_parser.add_argument("--round-decimals", type=int, default=3, help="Decimal places for rounding")
+    _add_output_args(score_ontarget_parser)
+    score_ontarget_parser.set_defaults(func=_cmd_score_ontarget)
+
+    # --- models ---
+    models_parser = subparsers.add_parser("models", help="On-target model information")
+    models_sub = models_parser.add_subparsers(dest="models_command", help="Model commands")
+
+    models_list_parser = models_sub.add_parser("list", help="List available on-target models")
+    _add_output_args(models_list_parser)
+    models_list_parser.set_defaults(func=_cmd_models_list)
+
+    models_describe_parser = models_sub.add_parser("describe", help="Describe an on-target model")
+    models_describe_parser.add_argument("model_name", help="Model name (rule_set_2, rule_set_3, doench_2014)")
+    _add_output_args(models_describe_parser)
+    models_describe_parser.set_defaults(func=_cmd_models_describe)
+
+    models_check_parser = models_sub.add_parser("check", help="Check model availability and dependencies")
+    _add_output_args(models_check_parser)
+    models_check_parser.set_defaults(func=_cmd_models_check)
 
     # --- genome ---
     genome_parser = subparsers.add_parser("genome", help="Genome management")
@@ -840,6 +951,14 @@ def main(argv=None):
     elif args.command == "tools":
         if not hasattr(args, "tools_command") or not args.tools_command:
             print("Error: specify a subcommand (list, describe)", file=sys.stderr)
+            return 1
+    elif args.command == "score":
+        if not hasattr(args, "score_command") or not args.score_command:
+            print("Error: specify a subcommand (on-target)", file=sys.stderr)
+            return 1
+    elif args.command == "models":
+        if not hasattr(args, "models_command") or not args.models_command:
+            print("Error: specify a subcommand (list, describe, check)", file=sys.stderr)
             return 1
     elif args.command == "sequence":
         if not hasattr(args, "sequence_command") or not args.sequence_command:

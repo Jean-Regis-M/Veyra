@@ -31,6 +31,7 @@ from mcp.tools.compute_seed_gc import compute_seed_gc
 from mcp.tools.cas_offinder_search import cas_offinder_search
 from mcp.tools.analyze_mismatch_seed import analyze_mismatch_seed
 from mcp.tools.compute_cut_site import compute_cut_site
+from mcp.tools.predict_ontarget_efficiency import predict_ontarget_efficiency_tool
 from mcp.schemas import PAMSiteRow
 
 # ---------------------------------------------------------------------------
@@ -131,6 +132,12 @@ TOOL_REGISTRY: dict[str, dict] = {
     "compute_cut_site": {
         "function": compute_cut_site,
         "description": "Deterministic canonical SpCas9 cleavage-site position anchor (coordinate-only, strand-aware, not a cleavage-efficiency predictor)",
+        "cost": "cheap / deterministic",
+        "tier": 1,
+    },
+    "predict_ontarget_efficiency": {
+        "function": predict_ontarget_efficiency_tool,
+        "description": "Predict on-target SpCas9 efficiency (Rule Set 2 / Rule Set 3). Distinguishes from off-target specificity (CFD).",
         "cost": "cheap / deterministic",
         "tier": 1,
     },
