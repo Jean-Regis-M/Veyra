@@ -20,7 +20,6 @@ import os
 import sys
 import subprocess
 import time
-import fcntl
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional
 from pathlib import Path
@@ -174,22 +173,49 @@ def _save_state(state: dict[str, RuntimeInfo]) -> None:
         json.dump({k: v.to_dict() for k, v in state.items()}, f, indent=2)
 
 
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock_fd(fd: int, blocking: bool) -> None:
+        # msvcrt has no blocking-lock primitive; poll LK_NBLCK instead.
+        while True:
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                if not blocking:
+                    raise
+                time.sleep(0.1)
+
+    def _unlock_fd(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock_fd(fd: int, blocking: bool) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock_fd(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def _acquire_lock(model_id: str) -> Any:
     """Acquire a file lock for model provisioning to prevent concurrent setup."""
     os.makedirs(_LOCK_DIR, exist_ok=True)
     lock_file = os.path.join(_LOCK_DIR, f"{model_id}.lock")
     fd = os.open(lock_file, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_fd(fd, blocking=False)
     except (IOError, OSError):
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _lock_fd(fd, blocking=True)
     return fd
 
 
 def _release_lock(fd: int) -> None:
     """Release a file lock."""
     try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _unlock_fd(fd)
         os.close(fd)
     except Exception:
         pass

@@ -149,29 +149,25 @@ mark {
   animation: veyra-marquee 26s linear infinite;
 }
 
-.veyra-ruler {
-  position: relative;
-  height: 1px;
-  background: var(--border-strong);
+@keyframes veyra-scene-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.veyra-tick {
-  position: absolute;
-  top: -3px;
-  width: 1px;
-  height: 7px;
-  background: var(--border-strong);
-}
-
-.veyra-tick-major {
-  height: 11px;
-  top: -7px;
-  background: var(--muted);
+.veyra-scene-in {
+  animation: veyra-scene-in 450ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .veyra-pulse-dot,
-  .veyra-marquee-track {
+  .veyra-marquee-track,
+  .veyra-scene-in {
     animation: none;
   }
 }

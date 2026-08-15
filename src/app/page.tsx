@@ -1,24 +1,11 @@
 import Link from "next/link";
 import { ArrowRight, Play } from "lucide-react";
 import DnaHelixModel from "@/components/dna/HelixModel";
+import PipelineDemo from "@/components/PipelineDemo";
 import Reveal from "@/components/Reveal";
 
 // The deterministic engine's actual computational steps — not marketing copy.
 const ENGINE_STEPS = ["PAM search", "GC content", "Off-target scan", "Seed mismatch", "Specificity ranking"];
-
-const PIPELINE_STEPS = [
-  { pos: "00", label: "Sequence", detail: "Ingest raw DNA input", source: "Input" as const },
-  { pos: "01", label: "Deterministic scoring", detail: "PAM search · GC · off-target · seed mismatch", source: "Engine" as const },
-  { pos: "02", label: "Genomic context", detail: "Ranked candidates, structured features", source: "Engine" as const },
-  { pos: "03", label: "AI reasoning", detail: "Explains risk in plain language", source: "AI" as const },
-  { pos: "04", label: "Visualization", detail: "Interactive 3D helix, cut-site highlighting", source: "Input" as const },
-];
-
-const SOURCE_TAG_STYLES: Record<(typeof PIPELINE_STEPS)[number]["source"], string> = {
-  Input: "text-muted border-border-strong",
-  Engine: "text-engine border-engine/40",
-  AI: "text-ai border-ai/40",
-};
 
 const FEATURES = [
   {
@@ -171,22 +158,12 @@ export default function Home() {
       </div>
 
       <section id="pipeline" className="py-24 px-4 sm:px-6">
-        <Reveal className="mx-auto max-w-6xl">
-          <h2 className="font-display text-2xl sm:text-3xl font-semibold text-foreground mb-10">The pipeline</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {PIPELINE_STEPS.map((step) => (
-              <div key={step.pos} className="veyra-glass p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-mono text-[11px] text-muted">{step.pos}</span>
-                  <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${SOURCE_TAG_STYLES[step.source]}`}>
-                    {step.source}
-                  </span>
-                </div>
-                <h3 className="font-display text-sm font-medium text-foreground">{step.label}</h3>
-                <p className="mt-1.5 text-xs text-muted leading-relaxed">{step.detail}</p>
-              </div>
-            ))}
-          </div>
+        <Reveal className="mx-auto max-w-2xl">
+          <h2 className="font-display text-2xl sm:text-3xl font-semibold text-foreground mb-3 text-center">The pipeline</h2>
+          <p className="text-sm text-muted text-center mb-10">
+            Every step below is real — click a dot or let it play through.
+          </p>
+          <PipelineDemo />
         </Reveal>
       </section>
 

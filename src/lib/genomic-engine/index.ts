@@ -14,6 +14,8 @@ export interface OffTargetHit {
   strand: Strand;
   mismatches: number;
   seedMismatches: number;
+  sequence: string; // the off-target's own protospacer-length window
+  pam: string | null; // 3 nt immediately following it, if the sequence extends that far
 }
 
 export interface GuideCandidate {
@@ -126,7 +128,9 @@ function findOffTargets(
         }
       }
       if (mismatches > 0 && mismatches <= maxMismatches) {
-        hits.push({ position: i, strand, mismatches, seedMismatches });
+        const pamEnd = i + candidate.length + 3;
+        const pam = pamEnd <= haystack.length ? haystack.slice(i + candidate.length, pamEnd) : null;
+        hits.push({ position: i, strand, mismatches, seedMismatches, sequence: window, pam });
       }
     }
   }

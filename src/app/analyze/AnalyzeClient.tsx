@@ -1,10 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import DnaHelixModel from "@/components/dna/HelixModel";
 import { analyzeSequence, GenomicEngineResult, GuideCandidate } from "@/lib/genomic-engine";
 import { EXAMPLE_SEQUENCES } from "@/lib/examples";
+import {
+  BackendCallResult,
+  buildOnTargetContext,
+  checkBackendHealth,
+  CfdScoreResult,
+  OnTargetScoreResult,
+  scoreOffTargetsCFD,
+  scoreOnTarget,
+} from "@/lib/backend";
+
+const CFD_OFFTARGET_CAP = 8; // keep the scoring request small and fast
+
+function riskBucket(cfd: number): "high" | "moderate" | "low" {
+  if (cfd >= 0.5) return "high";
+  if (cfd >= 0.1) return "moderate";
+  return "low";
+}
 
 interface ReasonResponse {
   summary: string;
@@ -34,6 +51,11 @@ export default function AnalyzeClient() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reasoning, setReasoning] = useState<ReasonResponse | null>(null);
   const [reasoningLoading, setReasoningLoading] = useState(false);
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const [onTargetLoading, setOnTargetLoading] = useState(false);
+  const [onTarget, setOnTarget] = useState<BackendCallResult<OnTargetScoreResult> | null>(null);
+  const [offTargetCfdLoading, setOffTargetCfdLoading] = useState(false);
+  const [offTargetCfd, setOffTargetCfd] = useState<BackendCallResult<CfdScoreResult> | null>(null);
 
   function runAnalysis(input: string) {
     try {
@@ -70,6 +92,68 @@ export default function AnalyzeClient() {
     () => result?.candidates.find((c) => c.id === selectedId) ?? null,
     [result, selectedId]
   );
+
+  useEffect(() => {
+    void checkBackendHealth().then(setBackendOnline);
+  }, []);
+
+  useEffect(() => {
+    if (!selected || !backendOnline) {
+      setOnTarget(null);
+      return;
+    }
+    const context = buildOnTargetContext(sequence, selected);
+    if (!context) {
+      setOnTarget({ ok: false, error: "Not enough flanking sequence for backend scoring (candidate too close to an input edge)." });
+      return;
+    }
+    let cancelled = false;
+    setOnTargetLoading(true);
+    scoreOnTarget(context).then((r) => {
+      if (!cancelled) {
+        setOnTarget(r);
+        setOnTargetLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, backendOnline, sequence]);
+
+  useEffect(() => {
+    if (!selected || !backendOnline) {
+      setOffTargetCfd(null);
+      return;
+    }
+    const scorable = selected.offTargets
+      .filter((h): h is typeof h & { pam: string } => h.pam !== null)
+      .slice(0, CFD_OFFTARGET_CAP);
+    if (scorable.length === 0) {
+      setOffTargetCfd({ ok: true, data: { scored: [], meanCfd: null, maxCfd: null } });
+      return;
+    }
+    let cancelled = false;
+    setOffTargetCfdLoading(true);
+    scoreOffTargetsCFD(
+      selected.sequence,
+      scorable.map((h) => ({ protospacer: h.sequence, pam: h.pam }))
+    ).then((r) => {
+      if (!cancelled) {
+        setOffTargetCfd(r);
+        setOffTargetCfdLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, backendOnline]);
+
+  const riskCounts = useMemo(() => {
+    if (!offTargetCfd?.ok) return null;
+    const counts = { high: 0, moderate: 0, low: 0 };
+    for (const hit of offTargetCfd.data.scored) counts[riskBucket(hit.cfdScore)]++;
+    return counts;
+  }, [offTargetCfd]);
 
   return (
     <div className="flex-1 pt-24 pb-20 veyra-hero-bg">
@@ -192,6 +276,92 @@ export default function AnalyzeClient() {
               </div>
             )}
 
+            {selected && backendOnline && (
+              <div className="veyra-glass p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                    Off-target risk · CFD (backend)
+                  </span>
+                  <SourceTag source="Engine" />
+                </div>
+                {offTargetCfdLoading && <p className="text-sm text-muted">Scoring off-targets via backend…</p>}
+                {!offTargetCfdLoading && offTargetCfd && !offTargetCfd.ok && (
+                  <p className="text-sm text-muted">{offTargetCfd.error}</p>
+                )}
+                {!offTargetCfdLoading && offTargetCfd?.ok && riskCounts && (
+                  <>
+                    {offTargetCfd.data.scored.length === 0 ? (
+                      <p className="text-sm text-muted">
+                        {selected.offTargets.length === 0
+                          ? "No off-target hits found within the input sequence."
+                          : "Off-target hits found, but none extend far enough to include a PAM — CFD scoring needs one."}
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex gap-2">
+                          <span className="rounded-full border px-2.5 py-1 text-[11px] font-mono border-risk-high/40 text-risk-high bg-risk-high/10">
+                            {riskCounts.high} high
+                          </span>
+                          <span className="rounded-full border px-2.5 py-1 text-[11px] font-mono border-risk-moderate/40 text-risk-moderate bg-risk-moderate/10">
+                            {riskCounts.moderate} moderate
+                          </span>
+                          <span className="rounded-full border px-2.5 py-1 text-[11px] font-mono border-risk-low/40 text-risk-low bg-risk-low/10">
+                            {riskCounts.low} low
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted leading-relaxed">
+                          {selected.id} has {selected.offTargets.length} off-target site
+                          {selected.offTargets.length === 1 ? "" : "s"} within the input sequence
+                          {selected.offTargets.length > offTargetCfd.data.scored.length
+                            ? `; the ${offTargetCfd.data.scored.length} closest were CFD-scored (max ${offTargetCfd.data.maxCfd?.toFixed(2)})`
+                            : ` — all CFD-scored (max ${offTargetCfd.data.maxCfd?.toFixed(2)})`}
+                          . Higher CFD means a mismatched site is more likely to still be cut by Cas9.
+                        </p>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {selected && backendOnline && (
+              <div className="veyra-glass p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                    On-target efficiency · backend model
+                  </span>
+                  <SourceTag source="Engine" />
+                </div>
+                {onTargetLoading && <p className="text-sm text-muted">Scoring via backend…</p>}
+                {!onTargetLoading && onTarget && !onTarget.ok && (
+                  <p className="text-sm text-muted">{onTarget.error}</p>
+                )}
+                {!onTargetLoading && onTarget?.ok && (
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-3">
+                      <span className="veyra-readout font-mono text-2xl text-foreground">
+                        {onTarget.data.score.toFixed(2)}
+                      </span>
+                      <span className="text-xs text-muted">/ 1.0 · {onTarget.data.modelUsed.replace(/_/g, " ")}</span>
+                    </div>
+                    {onTarget.data.fallbackUsed && (
+                      <p className="text-[11px] text-muted leading-relaxed">
+                        Preferred model unavailable in this deployment — fell back through{" "}
+                        {onTarget.data.fallbackChain.map((f) => f.model.replace(/_/g, " ")).join(" → ")}.
+                      </p>
+                    )}
+                    <p className="text-[11px] font-mono text-muted/70 truncate">{onTarget.data.modelSource}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {backendOnline === false && (
+              <p className="text-[11px] font-mono text-muted/70">
+                Backend engine offline — showing client-side heuristic scores only.
+              </p>
+            )}
+
             <div className="veyra-glass p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-muted">Reasoning</span>
@@ -214,9 +384,11 @@ export default function AnalyzeClient() {
             </div>
 
             <p className="text-[11px] font-mono text-muted/70 leading-relaxed">
-              Off-target search is scoped to the provided sequence only (no genome-wide index).
-              Scores are a simplified heuristic — see docs/scientific-assumptions.md. Research
-              prototype, not a clinical or diagnostic tool.
+              Off-target search is scoped to the provided sequence only (no genome-wide reference
+              index). When the backend is online, off-target and on-target scores use published
+              algorithms (CFD, Rule Set 3 / Doench 2014); otherwise scores are the client-side
+              heuristic only — see docs/scientific-assumptions.md. Research prototype, not a
+              clinical or diagnostic tool.
             </p>
           </div>
         </div>

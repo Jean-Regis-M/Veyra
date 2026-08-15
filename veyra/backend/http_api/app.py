@@ -18,6 +18,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Any, Optional
@@ -26,6 +27,14 @@ app = FastAPI(
     title="VEYRA API",
     description="VEYRA Genomic Intelligence Backend — HTTP API",
     version="0.1.0",
+)
+
+# Frontend (Next.js dev server) calls this API directly from the browser.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
