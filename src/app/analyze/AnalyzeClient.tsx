@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import DnaHelix, { HelixHighlight } from "@/components/dna/Helix";
+import DnaHelixModel from "@/components/dna/HelixModel";
 import { analyzeSequence, GenomicEngineResult, GuideCandidate } from "@/lib/genomic-engine";
 import { EXAMPLE_SEQUENCES } from "@/lib/examples";
 
@@ -17,6 +17,15 @@ const RISK_STYLES: Record<GuideCandidate["riskLevel"], string> = {
   moderate: "text-risk-moderate border-risk-moderate/40 bg-risk-moderate/10",
   high: "text-risk-high border-risk-high/40 bg-risk-high/10",
 };
+
+function SourceTag({ source }: { source: "Engine" | "AI" }) {
+  const color = source === "Engine" ? "text-engine border-engine/40" : "text-ai border-ai/40";
+  return (
+    <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${color}`}>
+      {source}
+    </span>
+  );
+}
 
 export default function AnalyzeClient() {
   const [sequence, setSequence] = useState("");
@@ -62,113 +71,111 @@ export default function AnalyzeClient() {
     [result, selectedId]
   );
 
-  const highlights: HelixHighlight[] = useMemo(() => {
-    if (!selected) return [];
-    // Highlight the protospacer window on the rendered helix.
-    return Array.from({ length: selected.sequence.length }, (_, i) => ({
-      position: selected.position + i,
-      riskLevel: selected.riskLevel,
-    }));
-  }, [selected]);
-
   return (
-    <div className="flex-1 pt-24 pb-20">
-      <header className="fixed top-0 inset-x-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur-md">
-        <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 font-mono text-sm tracking-widest text-foreground">
-            <span className="h-2 w-2 rounded-full bg-accent" />
+    <div className="flex-1 pt-24 pb-20 veyra-hero-bg">
+      <header className="fixed top-4 inset-x-0 z-50 px-4 sm:px-6">
+        <div className="veyra-glass mx-auto max-w-4xl px-5 h-14 flex items-center justify-between rounded-full!">
+          <Link href="/" className="flex items-center gap-2 font-display text-sm font-semibold tracking-wide text-foreground">
+            <span className="veyra-pulse-dot h-2 w-2 rounded-full bg-primary" />
             VEYRA
           </Link>
           <span className="font-mono text-xs text-muted uppercase tracking-widest">Analysis</span>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-6">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-foreground">Guide-RNA analysis</h1>
+          <h1 className="font-display text-2xl font-semibold text-foreground">Guide-RNA analysis</h1>
           <p className="mt-2 text-sm text-muted max-w-2xl">
             Paste a DNA sequence to run the deterministic PAM search, GC/off-target scoring, and
             ranking pipeline. Results are illustrative — see the scope note below.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <textarea
-              value={sequence}
-              onChange={(e) => setSequence(e.target.value)}
-              placeholder="ACGTGACCTGAGG..."
-              rows={8}
-              className="w-full rounded-lg border border-border bg-surface p-4 font-mono text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent/60"
-            />
-            {error && <p className="text-sm text-risk-high">{error}</p>}
+            <div className="veyra-glass p-4 space-y-4">
+              <textarea
+                value={sequence}
+                onChange={(e) => setSequence(e.target.value)}
+                placeholder="ACGTGACCTGAGG..."
+                rows={8}
+                className="w-full rounded-2xl border border-border bg-black/20 p-4 font-mono text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-primary/60"
+              />
+              {error && <p className="text-sm text-risk-high">{error}</p>}
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => runAnalysis(sequence)}
-                className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground hover:opacity-90 transition-opacity"
-              >
-                Run analysis
-              </button>
-              {EXAMPLE_SEQUENCES.map((ex) => (
+              <div className="flex flex-wrap gap-2">
                 <button
-                  key={ex.id}
-                  onClick={() => {
-                    setSequence(ex.sequence);
-                    runAnalysis(ex.sequence);
-                  }}
-                  className="rounded-md border border-border px-4 py-2.5 text-xs text-muted hover:border-accent/40 hover:text-foreground transition-colors"
+                  onClick={() => runAnalysis(sequence)}
+                  className="rounded-full bg-linear-to-r from-primary to-secondary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
                 >
-                  {ex.label}
+                  Run analysis
                 </button>
-              ))}
+                {EXAMPLE_SEQUENCES.map((ex) => (
+                  <button
+                    key={ex.id}
+                    onClick={() => {
+                      setSequence(ex.sequence);
+                      runAnalysis(ex.sequence);
+                    }}
+                    className="rounded-full border border-border px-4 py-2.5 text-xs text-muted hover:border-primary/40 hover:text-foreground transition-colors"
+                  >
+                    {ex.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {result && (
-              <div className="rounded-lg border border-border bg-surface/60 divide-y divide-border">
-                {result.candidates.slice(0, 8).map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedId(c.id)}
-                    className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-surface-raised transition-colors ${
-                      c.id === selectedId ? "bg-surface-raised" : ""
-                    }`}
-                  >
-                    <div>
-                      <div className="font-mono text-xs text-foreground">
-                        {c.sequence} <span className="text-muted">{c.pam}</span>
+              <div className="veyra-glass overflow-hidden">
+                <div className="flex items-center justify-between px-4 pt-4">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted">Candidates</span>
+                  <SourceTag source="Engine" />
+                </div>
+                <div className="veyra-readout divide-y divide-border mt-3">
+                  {result.candidates.slice(0, 8).map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setSelectedId(c.id)}
+                      className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-white/5 transition-colors ${
+                        c.id === selectedId ? "bg-white/5" : ""
+                      }`}
+                    >
+                      <div>
+                        <div className="font-mono text-xs text-foreground">
+                          {c.sequence} <span className="text-muted">{c.pam}</span>
+                        </div>
+                        <div className="text-[11px] text-muted mt-1">
+                          pos {c.position} · strand {c.strand} · GC {(c.gcContent * 100).toFixed(0)}%
+                        </div>
                       </div>
-                      <div className="text-[11px] text-muted mt-1">
-                        pos {c.position} · strand {c.strand} · GC {(c.gcContent * 100).toFixed(0)}%
-                      </div>
-                    </div>
-                    <span className={`shrink-0 rounded border px-2 py-1 text-[11px] font-mono ${RISK_STYLES[c.riskLevel]}`}>
-                      {c.overallScore}
-                    </span>
-                  </button>
-                ))}
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-mono ${RISK_STYLES[c.riskLevel]}`}>
+                        {c.overallScore}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
 
           <div className="lg:col-span-3 space-y-4">
-            <div className="rounded-2xl border border-border bg-surface/40 h-[340px] overflow-hidden">
-              <DnaHelix
-                basePairs={selected ? Math.max(selected.sequence.length + 8, 32) : 40}
-                highlights={highlights}
-                className="h-full w-full"
-              />
+            <div className="relative h-[340px]">
+              <DnaHelixModel className="h-full w-full" />
             </div>
 
             {selected && (
-              <div className="rounded-lg border border-border bg-surface/60 p-5 space-y-3">
+              <div className="veyra-glass p-5 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h2 className="font-mono text-sm text-foreground">{selected.id}</h2>
-                  <span className={`rounded border px-2 py-1 text-[11px] font-mono uppercase ${RISK_STYLES[selected.riskLevel]}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-foreground">{selected.id}</span>
+                    <SourceTag source="Engine" />
+                  </div>
+                  <span className={`rounded-full border px-2.5 py-1 text-[11px] font-mono uppercase ${RISK_STYLES[selected.riskLevel]}`}>
                     {selected.riskLevel} risk
                   </span>
                 </div>
-                <dl className="grid grid-cols-3 gap-4 text-sm">
+                <dl className="veyra-readout grid grid-cols-3 gap-4 text-sm">
                   <div>
                     <dt className="text-muted text-xs">Specificity</dt>
                     <dd className="text-foreground font-mono">{selected.specificityScore}/100</dd>
@@ -185,14 +192,15 @@ export default function AnalyzeClient() {
               </div>
             )}
 
-            <div className="rounded-lg border border-border bg-surface/60 p-5">
-              <h2 className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
-                AI reasoning
-              </h2>
+            <div className="veyra-glass p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-widest text-muted">Reasoning</span>
+                <SourceTag source="AI" />
+              </div>
               {reasoningLoading && <p className="text-sm text-muted">Generating explanation…</p>}
               {!reasoningLoading && reasoning && (
                 <div className="space-y-3">
-                  <p className="text-sm text-muted whitespace-pre-line">{reasoning.summary}</p>
+                  <p className="text-sm text-foreground/90 whitespace-pre-line">{reasoning.summary}</p>
                   {reasoning.source === "stub" && (
                     <p className="text-[11px] font-mono text-muted/70">
                       integration point — not a model-generated response

@@ -165,14 +165,14 @@ function Model({ autoRotate, activeId, onSelect }: ModelProps) {
 
     // The source PBR material reads near-black without an HDRI environment
     // (no reflections to light the metal/roughness response) — cap metalness
-    // and lift the color multiplier so it renders as a light, paper-theme
-    // specimen instead of a dark studio-lit render.
+    // and lift the color multiplier so it stays legible as a lab specimen
+    // against the dark clinical backdrop instead of going fully black.
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
         const mat = child.material;
         mat.metalness = Math.min(mat.metalness, 0.2);
         mat.roughness = Math.max(mat.roughness, 0.55);
-        mat.color.lerp(new THREE.Color("#ffffff"), 0.55);
+        mat.color.lerp(new THREE.Color("#eef3ee"), 0.4);
       }
     });
 
@@ -204,12 +204,12 @@ function Model({ autoRotate, activeId, onSelect }: ModelProps) {
                 onSelect(activeId === h.id ? null : h.id);
               }}
               aria-label={h.label}
-              className={`h-3 w-3 rounded-full border-2 border-[#fdfcf9] shadow-[0_0_0_3px_rgba(160,82,45,0.25)] hover:scale-125 transition-transform cursor-pointer ${
-                activeId === h.id ? "bg-foreground scale-125" : "bg-accent"
+              className={`h-3 w-3 rounded-full border-2 border-background shadow-[0_0_0_3px_rgba(56,189,248,0.35)] hover:scale-125 transition-transform cursor-pointer ${
+                activeId === h.id ? "bg-foreground scale-125" : "bg-primary"
               }`}
             />
             {activeId === h.id && (
-              <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-40 h-[4.5rem] rounded-sm border border-border bg-surface-raised px-3 py-2 shadow-[0_4px_12px_rgba(20,19,17,0.15)] text-left overflow-hidden">
+              <div className="veyra-glass absolute bottom-5 left-1/2 -translate-x-1/2 w-40 h-[4.5rem] px-3 py-2 text-left overflow-hidden">
                 <p className="font-mono text-[10px] uppercase tracking-wide text-accent mb-0.5 truncate">{h.label}</p>
                 <p className="text-[11px] text-muted leading-snug line-clamp-3">{h.detail}</p>
               </div>
@@ -235,14 +235,14 @@ export default function DnaHelixModel({ autoRotate = true, interactive = true, c
   return (
     <div className={className}>
       <Canvas dpr={[1, 2]} camera={{ position: [3.0, 0, 5.2], fov: 30 }} gl={{ antialias: true, alpha: true }}>
-        <hemisphereLight args={["#fdfcf9", "#3a372f", 1.1]} />
-        <ambientLight intensity={0.5} />
-        <pointLight position={[5, 5, 5]} intensity={70} color="#fdfcf9" />
-        <pointLight position={[-5, -4, -5]} intensity={35} color="#f2efe8" />
+        <hemisphereLight args={["#eef3ee", "#121512", 0.9]} />
+        <ambientLight intensity={0.35} />
+        <pointLight position={[5, 5, 5]} intensity={65} color="#38bdf8" />
+        <pointLight position={[-5, -4, -5]} intensity={35} color="#34d399" />
         <pointLight position={[0, 6, -4]} intensity={30} color="#ffffff" />
         <Suspense fallback={null}>
           <Model autoRotate={autoRotate} activeId={active} onSelect={setActive} />
-          <ContactShadows position={[0, -4.05, 0]} opacity={0.35} scale={10} blur={2.4} far={5} color="#141311" />
+          <ContactShadows position={[0, -4.05, 0]} opacity={0.6} scale={10} blur={2.4} far={5} color="#000000" />
         </Suspense>
         {interactive && (
           <OrbitControls enablePan={false} enableZoom minDistance={3} maxDistance={10} autoRotate={false} />

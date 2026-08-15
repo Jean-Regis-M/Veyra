@@ -1,64 +1,68 @@
 @import "tailwindcss";
 
-/* Paper & Ink editorial palette
- * system: warm parchment ground, near-black ink, terracotta accent, sharp
- * 2px radius. DNA base-pair colors stay separate (biological data, not
- * chrome) and are set directly in the 3D helix component. */
+/* Glassmorphic genomic-console world — dark, deep-space background with a
+ * sky-blue/emerald "DNA" gradient, frosted glass cards, and pill-shaped UI,
+ * per the user's pinned reference images (dark atmospheric hero blended
+ * with a glossy light-SaaS chrome). Engine (deterministic) vs AI-generated
+ * text keeps a small text-label distinction per CLAUDE.md's traceability
+ * rule — a labeled tag, not a whole second color system. */
 :root {
-  --radius: 0.125rem;
-  --background: #f2efe8;
-  --surface: #ede9e1;
-  --surface-raised: #fdfcf9;
-  --border: #e3ded4;
-  --border-strong: #d2cdc0;
-  --foreground: #141311;
-  --muted: #635d51;
-  --accent: #a0522d;
-  --accent-foreground: #f2efe8;
-  --accent-2: #2d6a4f;
-  --risk-low: #3f7a4f;
-  --risk-moderate: #a5671c;
-  --risk-high: #9e3b28;
-}
+  --radius: 1.25rem;
+  --radius-pill: 999px;
+  --background: #06070c;
+  --background-2: #0a0d16;
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-raised: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --foreground: #f3f6fb;
+  --muted: #93a0b8;
 
-/* Dark is opt-in via a `.dark` class,
- * not automatic OS-preference switching — light Paper & Ink is the default. */
-.dark {
-  --background: #151412;
-  --surface: #1d1c19;
-  --surface-raised: #201e1a;
-  --border: #2c2a25;
-  --border-strong: #3a372f;
-  --foreground: #ece9e2;
-  --muted: #a8a294;
-  --accent: #c17a52;
-  --accent-foreground: #201e1a;
-  --accent-2: #6f9e7d;
-  --risk-low: #6f9e7d;
-  --risk-moderate: #c09a5e;
-  --risk-high: #c05a4b;
+  --primary: #38bdf8;
+  --primary-foreground: #041019;
+  --secondary: #34d399;
+  --secondary-foreground: #04160f;
+
+  --engine: #34d399;
+  --ai: #38bdf8;
+
+  --risk-low: #34d399;
+  --risk-moderate: #fbbf24;
+  --risk-high: #f87171;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-background-2: var(--background-2);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent-2: var(--accent-2);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--primary);
+  --color-accent-foreground: var(--primary-foreground);
+
+  --color-engine: var(--engine);
+  --color-ai: var(--ai);
+
   --color-risk-low: var(--risk-low);
   --color-risk-moderate: var(--risk-moderate);
   --color-risk-high: var(--risk-high);
-  --radius-sm: calc(var(--radius) - 2px);
+
+  --radius-sm: 0.6rem;
   --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 4px);
+  --radius-lg: 1.75rem;
+  --radius-pill: var(--radius-pill);
+
   --font-sans: var(--font-inter), var(--font-geist-sans);
-  --font-display: var(--font-plus-jakarta-sans), var(--font-inter);
-  --font-mono: var(--font-jetbrains-mono), var(--font-geist-mono);
+  --font-display: var(--font-exo), var(--font-geist-sans);
+  --font-mono: var(--font-roboto-mono), var(--font-geist-mono);
 }
 
 body {
@@ -76,21 +80,47 @@ h3,
   letter-spacing: -0.01em;
 }
 
-/* Specimen-viewer backdrop — soft radial parchment vignette, no grid lines
- * competing with the 3D model. */
-.veyra-grid-bg {
-  background: radial-gradient(ellipse at center, #fdfcf9 0%, #f2efe8 55%, #ede9e1 100%);
+::selection {
+  background: color-mix(in srgb, var(--primary) 35%, transparent);
+  color: var(--foreground);
 }
 
-.dark .veyra-grid-bg {
-  background: radial-gradient(ellipse at center, #201e1a 0%, #1d1c19 55%, #151412 100%);
+.veyra-readout {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Frosted glass card — the surface language of every panel in this world. */
+.veyra-glass {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.025));
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.08) inset, 0 24px 60px -24px rgba(0, 0, 0, 0.65);
+}
+
+/* Deep-space hero backdrop — radial DNA-blue/emerald glow over near-black. */
+.veyra-hero-bg {
+  background:
+    radial-gradient(60% 55% at 78% 20%, rgba(56, 189, 248, 0.22) 0%, transparent 60%),
+    radial-gradient(50% 45% at 15% 85%, rgba(52, 211, 153, 0.16) 0%, transparent 65%),
+    radial-gradient(120% 90% at 50% 0%, var(--background-2) 0%, var(--background) 60%);
+}
+
+.veyra-grid-bg {
+  background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.08) 0%, transparent 65%), var(--background);
+}
+
+.veyra-glow-primary {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 50%, transparent), 0 8px 32px -8px color-mix(in srgb, var(--primary) 55%, transparent);
 }
 
 mark {
-  background: var(--accent-2);
-  color: var(--surface-raised);
-  padding: 0 0.15em;
-  border-radius: 2px;
+  background: color-mix(in srgb, var(--primary) 85%, white 15%);
+  color: var(--primary-foreground);
+  padding: 0 0.2em;
+  border-radius: 0.3em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -117,6 +147,26 @@ mark {
 
 .veyra-marquee-track {
   animation: veyra-marquee 26s linear infinite;
+}
+
+.veyra-ruler {
+  position: relative;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.veyra-tick {
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: 7px;
+  background: var(--border-strong);
+}
+
+.veyra-tick-major {
+  height: 11px;
+  top: -7px;
+  background: var(--muted);
 }
 
 @media (prefers-reduced-motion: reduce) {
