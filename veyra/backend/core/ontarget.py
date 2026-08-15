@@ -18,6 +18,8 @@ from __future__ import annotations
 import sys
 import os
 import math
+import contextlib
+import io
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _BACKEND_DIR not in sys.path:
@@ -203,6 +205,24 @@ def _predict_rs2_model(seq: str) -> float | None:
         return None
 
 
+def _predict_rs3(seq: str) -> float | None:
+    """Run rs3 with compatibility handling for modern LightGBM."""
+    if not seq or len(seq) != 30 or not set(seq.upper()) <= set("ACGT"):
+        return None
+    try:
+        from rs3.seq import featurize_context, load_seq_model
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            model = load_seq_model()
+            if getattr(model, "_n_classes", None) is None:
+                model._n_classes = 0
+            features = featurize_context([seq.upper()], sequence_tracr="Hsu2013", n_jobs=1)
+            score = float(model.predict(features)[0])
+        return score if math.isfinite(score) else None
+    except Exception:
+        return None
+
+
 def _execute_model(model_id: str, seq: str) -> tuple[float | None, str]:
     """Execute a specific model by ID.
 
@@ -237,13 +257,10 @@ def _execute_model(model_id: str, seq: str) -> tuple[float | None, str]:
         return None, "unavailable"
 
     elif model_id == "rule_set_3":
-        try:
-            import numpy as np
-            from rs3.seq import predict_seq
-            score = predict_seq([seq], sequence_tracr="Hsu2013")[0]
-            return float(score), "rs3 LightGBM (Doench 2021 / Rule Set 3)"
-        except Exception:
-            return None, "unavailable"
+        score = _predict_rs3(seq)
+        if score is not None:
+            return score, "rs3 LightGBM (Doench 2021 / Rule Set 3; native activity scale)"
+        return None, "unavailable"
 
     elif model_id == "doench_2014":
         score = _predict_doench2014(seq)
@@ -428,21 +445,14 @@ def predict_ontarget_efficiency(request: ComputeOnTargetEfficiencyRequest) -> Ve
             errors=["Could not extract PAM from context sequence"],
         )
     
-               # Model selection - support "auto" and "both" as aliases
+    # Model selection - support "auto" and "both" as aliases.
     requested_model = request.model.lower()
     if requested_model == "both":
         requested_model = "auto"
 
-    # Select model using registry
-    # For auto: attempt provisioning of incompatible models before falling back
-    auto_provision = (requested_model == "auto")
-    model_used, selection = select_model(requested_model, auto_provision=auto_provision)
-
-    # Re-check: after provisioning, refresh the registry
-    if auto_provision and (model_used is None and selection.get("selection_status") == "failed"):
-        from core.model_registry import initialize_model_registry
-        initialize_model_registry()
-        model_used, selection = select_model(requested_model, auto_provision=auto_provision)
+    # Prediction must not create environments or install packages implicitly.
+    # Runtime provisioning is an explicit management operation.
+    model_used, selection = select_model(requested_model, auto_provision=False)
     
     # If explicit model requested but unavailable, return error
     if requested_model != "auto" and model_used is None:
@@ -506,8 +516,10 @@ def predict_ontarget_efficiency(request: ComputeOnTargetEfficiencyRequest) -> Ve
     # Normalization
     normalized = False
     if request.normalize_score:
-        # All models output 0-1 scale
-        normalized = True
+        if model_used == "rule_set_3":
+            warnings.append("Rule Set 3 exposes a native activity score; no validated 0-1 normalization was applied")
+        else:
+            normalized = True
     
     # Rounding
     round_decimals = request.round_decimals
@@ -526,7 +538,7 @@ def predict_ontarget_efficiency(request: ComputeOnTargetEfficiencyRequest) -> Ve
         "model_used": model_used,
         "model_source": model_source,
         "model_version": get_model_info(model_used).version if get_model_info(model_used) else "unknown",
-        "output_scale": "0-1",
+        "output_scale": get_model_info(model_used).output_scale if get_model_info(model_used) else "unknown",
         "selection_status": selection["selection_status"],
         "fallback_used": selection["fallback_used"],
         "fallback_from": selection["fallback_from"],
