@@ -31,6 +31,7 @@ register_genome(config)
 
 | Genome ID | Description | FASTA Path |
 |-----------|-------------|------------|
+| `ecoli_k12_mg1655` | E. coli K-12 MG1655 (NCBI GCF_000005845.2, 4.6 Mbp) | `veyra/data/references/ecoli_k12/genome/GCF_000005845.2.fasta` |
 | `GRCh38.p14` | Human GRCh38.p14 assembly (NCBI GCF_000001405.40) | `refrences/refs/ncbi_dataset/data/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna` |
 
 Additional test genomes are registered if their FASTA files exist:
@@ -131,9 +132,36 @@ refrences/
 │       └── guideseq/test/test_genome.fa
 ```
 
+## E. coli K-12 MG1655 (Integration Test Genome)
+
+**Genome ID:** `ecoli_k12_mg1655`
+
+| Property | Value |
+|----------|-------|
+| Organism | Escherichia coli str. K-12 substr. MG1655 |
+| Assembly | ASM584v2 |
+| Accession | GCF_000005845.2 |
+| Chromosome | NC_000913.3 |
+| Length | 4,641,652 bp |
+| FASTA | `veyra/data/references/ecoli_k12/genome/GCF_000005845.2.fasta` |
+| FASTA index | `genome/GCF_000005845.2.fasta.fai` |
+| BWA index | `genome/GCF_000005845.2.fasta.*` (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) |
+| MD5 | `92c997bcd88e983ffdb21b2712ed3736` |
+| Source | NCBI RefSeq FTP |
+
+This is the recommended genome for integration testing. It is small enough for fast CI runs while being a real, fully assembled bacterial chromosome.
+
+**Verify registration:**
+
+```bash
+python -m cli.main genome list
+python -m cli.main genome info --genome-id ecoli_k12_mg1655
+```
+
 ## Notes
 
 - Genomes are **not** duplicated by VEYRA. The registry stores paths to existing FASTA files.
 - The `GRCh38.p14` genome is ~3.2 Gbp. BWA index creation takes several minutes.
+- The `ecoli_k12_mg1655` genome is ~4.6 Mbp. BWA index creation takes ~2 seconds.
 - Always build `.fai` before BWA index (`samtools faidx` is fast).
 - BWA index files (`.bwt`, `.pac`, etc.) are created alongside the FASTA file, not in a separate directory.

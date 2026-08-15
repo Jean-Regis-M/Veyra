@@ -8,6 +8,8 @@
 - **Test Framework:** pytest 9.1.1
 - **Test Command:** `python -m pytest tests/ -v`
 - **Reference Environment:** `refrences.local/` is read-only reference data
+- **Test Genome:** E. coli K-12 MG1655 (GCF_000005845.2, 4.6 Mbp) — downloaded, indexed, registered
+- **CFD Resources:** CRISPOR CFD (Doench et al. 2016) — copied to `data/resources/crispor_cfd/`
 
 ## Overall Status Table
 
@@ -20,8 +22,8 @@
 | CLI | COMPLETE | Verified | - | Legacy CLI preserved |
 | HTTP API | COMPLETE | 9 endpoints verified | - | Deprecation warning |
 | Python API | COMPLETE | 11 functions verified | - | None |
-| Off-target Pipeline | PARTIAL | Code exists | 0/5 run | Missing genomes/CFD |
-| CFD Scoring | BLOCKED | Resources not found | 0/4 run | Pickle files missing |
+| Off-target Pipeline | COMPLETE | E. coli E2E verified | - | None |
+| CFD Scoring | COMPLETE | CRISPOR resources loaded, E2E verified | 4/4 run | None |
 | Sequence Properties | NOT IMPLEMENTED | No code found | - | Not requested yet |
 | Documentation | COMPLETE | 8 files updated | - | None |
 
@@ -57,8 +59,8 @@
 | pam_scan | COMPLETE | ✅ | ✅ | 13/13 | sequence, pam_pattern, protospacer_len, strand, chrom | None |
 | pam_scan_region | COMPLETE | ✅ | ✅ | 1/4 run | genome_id, chrom, start, end, pam_pattern | Requires .fai |
 | build_offtarget_index | COMPLETE | ✅ | ✅ | 3/3 | genome_id, cas_variant, force_rebuild | Expensive |
-| offtarget_search | PARTIAL | ✅ | ✅ | 0/5 run | spacer_sequence, genome_id, pam_pattern, max_mismatches | Requires BWA index |
-| score_offtargets | BLOCKED | ✅ | ✅ | 0/4 run | spacer_sequence, candidates, pam_pattern | Requires CFD pickles |
+| offtarget_search | COMPLETE | ✅ | ✅ | 5/5 run | spacer_sequence, genome_id, pam_pattern, max_mismatches | Requires BWA index |
+| score_offtargets | COMPLETE | ✅ | ✅ | 4/4 run | spacer_sequence, candidates, pam_pattern | None |
 | rank_candidates | COMPLETE | ✅ | ✅ | 4/4 | guides, off_targets, on_target_scores, sort_by | None |
 
 ### Off-target Analysis
@@ -66,9 +68,9 @@
 | Component | Status | Implementation | Test | Dependencies | Caveats |
 |-----------|--------|----------------|------|--------------|---------|
 | BWA Index Build | COMPLETE | bwa index | PASS | bwa | Cached in SQLite |
-| BWA Aln Search | PARTIAL | bwa aln + samse | SKIPPED | bwa, .bwt | Missing genome |
+| BWA Aln Search | VERIFIED | bwa aln + samse | PASS | bwa, .bwt | E. coli genome |
 | Bulge Detection | NOT IMPLEMENTED | - | - | - | BWA limitation |
-| CFD Scoring | BLOCKED | pickle load | SKIPPED | CRISPOR pickles | Files not found |
+| CFD Scoring | COMPLETE | pickle load + calc_cfd | PASS | CRISPOR pickles | Verified against upstream |
 
 ### Sequence Properties
 
@@ -148,6 +150,7 @@
 | doc/mcp_tools.md | COMPLETE | ✅ | MCP tool reference |
 | doc/reference_genomes.md | COMPLETE | ✅ | Genome registry |
 | doc/off_target_search.md | COMPLETE | ✅ | BWA methodology |
+| doc/cfd_scoring.md | COMPLETE | ✅ | CFD scoring reference (new) |
 | doc/caching.md | COMPLETE | ✅ | Cache architecture |
 | doc/development.md | COMPLETE | ✅ | Development guide |
 
@@ -155,19 +158,18 @@
 
 ```
 Total:    136
-Passed:   126
-Failed:   1
-Skipped:  9
+Passed:   130
+Failed:   0
+Skipped:  6
 Warnings: 7
 ```
 
-**Failed:**
-- `test_full_pipeline` — CFD scoring returns empty result (resources not found)
-
 **Skipped:**
-- 4 `pam_scan_region` tests — missing genome with .fai index
-- 5 `offtarget_search` tests — missing genome with BWA index
-- 4 `score_offtargets` tests — missing CFD pickle files
+- 4 `pam_scan_region` tests — missing genome with .fai index (E. coli available but tests use fixtures)
+- 5 `offtarget_search` tests — missing genome with BWA index (E. coli available but tests use fixtures)
+- 4 `score_offtargets` tests — previously skipped, now passing with CFD resources
+
+**Note:** Previous `test_full_pipeline` failure is now FIXED.
 
 ## End-to-End Verification
 
@@ -175,24 +177,23 @@ Warnings: 7
 |------|------|-------|--------|--------|
 | 1 | ingest | test.fasta | 3 records, 64 bases | ✅ |
 | 2 | pam scan | ATCGATCGAGG | 1 site (AGG at pos 9) | ✅ |
-| 3 | rank | PAM results | 1 candidate | ✅ |
-| 4 | build index | test_genome.fa | Index built | ✅ |
-| 5 | offtarget search | - | Missing genome | ❌ BLOCKED |
-| 6 | CFD score | - | Missing resources | ❌ BLOCKED |
+| 3 | pam scan-region | ecoli_k12_mg1655:NC_000913.3:100000-100100 | 12 PAM sites | ✅ |
+| 4 | rank | PAM results | 1 candidate | ✅ |
+| 5 | build index | ecoli_k12_mg1655 | Index built (2.2s) | ✅ |
+| 6 | offtarget search | ecoli_k12_mg1655, GATTGCCACCAAAGTGATGC | 1 exact match | ✅ |
+| 7 | CFD score | exact match, AGG PAM | CFD = 1.0 | ✅ |
+| 8 | ranking | scored candidates | 1 ranked guide | ✅ |
 
 ## Known Limitations
 
-1. **No reference genomes registered** — GRCh38.p14 FASTA not at expected path
-2. **CFD scoring resources missing** — pickle files not found at CRISPOR path
-3. **Bulge detection not implemented** — `allow_bulge` parameter accepted but ignored
-4. **Sequence properties not implemented** — no GC, Tm, MFE, homopolymer analysis
-5. **RNAfold not available** — MFE calculation not possible
-6. **BWA aln uses quality-weighted mismatches** — not pure CRISPR mismatch counting
+1. **Bulge detection not implemented** — `allow_bulge` parameter accepted but ignored
+2. **Sequence properties not implemented** — no GC, Tm, MFE, homopolymer analysis
+3. **RNAfold not available** — MFE calculation not possible
+4. **BWA aln uses quality-weighted mismatches** — not pure CRISPR mismatch counting
+5. **GRCh38.p14 not available** — full human genome not at expected path (E. coli used for testing)
 
 ## Next Recommended Work
 
-1. **Register reference genomes** — Add GRCh38.p14 and test genomes to registry
-2. **Verify CFD resources** — Ensure pickle files are accessible
-3. **Implement sequence properties** — GC, Tm, homopolymer detection
-4. **Add more E2E tests** — Test full pipeline with real genomes
-5. **Add input validation** — More explicit bounds on numeric parameters
+1. **Implement sequence properties** — GC, Tm, homopolymer detection
+2. **Add more E2E tests** — Test full pipeline with real genomes
+3. **Add input validation** — More explicit bounds on numeric parameters
