@@ -7,7 +7,15 @@ import * as THREE from "three";
 
 const MODEL_URL = "/models/dna.glb";
 
-interface Hotspot {
+interface HotspotDef {
+  id: string;
+  yFraction: number; // -1..1 along the model's vertical extent
+  angleDeg: number; // direction to raycast in from, around the vertical axis
+  label: string;
+  detail: string;
+}
+
+interface ResolvedHotspot {
   id: string;
   position: [number, number, number];
   label: string;
@@ -16,37 +24,109 @@ interface Hotspot {
 
 // Standard B-DNA structural vocabulary — illustrative labels on the
 // decorative hero model, not derived from any sequence/engine data.
-const HOTSPOTS: Hotspot[] = [
-  { id: "5prime", position: [0.9, 3.1, 0.4], label: "5′ terminus", detail: "The free phosphate end of a strand." },
-  { id: "major-groove", position: [-1.1, 1.3, 0.7], label: "Major groove", detail: "The wider groove — where most proteins read the sequence." },
-  { id: "base-pair", position: [1.0, -0.1, -0.6], label: "Base pair", detail: "Hydrogen-bonded A–T and G–C pairs." },
-  { id: "minor-groove", position: [-0.9, -1.6, 0.6], label: "Minor groove", detail: "The narrower groove between the two backbones." },
-  { id: "backbone", position: [0.8, -3.1, -0.4], label: "Sugar–phosphate backbone", detail: "The structural chain linking each nucleotide." },
+// Positions are resolved at runtime by raycasting onto the actual mesh
+// surface (see resolveHotspots) rather than hardcoded, since the source
+// model's proportions/orientation aren't known in advance.
+const HOTSPOT_DEFS: HotspotDef[] = [
+  { id: "5prime", yFraction: 0.72, angleDeg: 35, label: "5′ terminus", detail: "The free phosphate end of a strand." },
+  { id: "major-groove", yFraction: 0.32, angleDeg: 205, label: "Major groove", detail: "The wider groove — where most proteins read the sequence." },
+  { id: "base-pair", yFraction: 0, angleDeg: 95, label: "Base pair", detail: "Hydrogen-bonded A–T and G–C pairs." },
+  { id: "minor-groove", yFraction: -0.32, angleDeg: 320, label: "Minor groove", detail: "The narrower groove between the two backbones." },
+  { id: "backbone", yFraction: -0.72, angleDeg: 150, label: "Sugar–phosphate backbone", detail: "The structural chain linking each nucleotide." },
 ];
 
-function Model({ autoRotate }: { autoRotate: boolean }) {
+function findFirstMesh(root: THREE.Object3D): THREE.Mesh | null {
+  let found: THREE.Mesh | null = null;
+  root.traverse((child) => {
+    if (!found && child instanceof THREE.Mesh) found = child;
+  });
+  return found;
+}
+
+/** Largest-eigenvector direction of a point cloud via power iteration — the
+ * mesh's true long axis, whatever arbitrary angle it was authored at. */
+function principalAxis(points: THREE.Vector3[]): THREE.Vector3 {
+  const centroid = new THREE.Vector3();
+  points.forEach((p) => centroid.add(p));
+  centroid.divideScalar(points.length);
+
+  let xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
+  const d = new THREE.Vector3();
+  points.forEach((p) => {
+    d.subVectors(p, centroid);
+    xx += d.x * d.x;
+    xy += d.x * d.y;
+    xz += d.x * d.z;
+    yy += d.y * d.y;
+    yz += d.y * d.z;
+    zz += d.z * d.z;
+  });
+  const n = points.length;
+  xx /= n; xy /= n; xz /= n; yy /= n; yz /= n; zz /= n;
+
+  let v = new THREE.Vector3(1, 1, 1).normalize();
+  for (let i = 0; i < 60; i++) {
+    const next = new THREE.Vector3(
+      xx * v.x + xy * v.y + xz * v.z,
+      xy * v.x + yy * v.y + yz * v.z,
+      xz * v.x + yz * v.y + zz * v.z
+    );
+    if (next.lengthSq() < 1e-12) break;
+    v = next.normalize();
+  }
+  return v;
+}
+
+/** Cast rays inward from outside the model at fixed heights/angles and snap
+ * each hotspot to wherever it actually hits the mesh surface. */
+function resolveHotspots(mesh: THREE.Mesh, halfHeight: number, outerRadius: number): ResolvedHotspot[] {
+  const raycaster = new THREE.Raycaster();
+  return HOTSPOT_DEFS.map((def) => {
+    const angle = (def.angleDeg * Math.PI) / 180;
+    const y = halfHeight * def.yFraction;
+    const origin = new THREE.Vector3(Math.cos(angle) * outerRadius, y, Math.sin(angle) * outerRadius);
+    const direction = new THREE.Vector3(-origin.x, 0, -origin.z).normalize();
+    raycaster.set(origin, direction);
+    const hit = raycaster.intersectObject(mesh, false)[0];
+    const point = hit ? hit.point : new THREE.Vector3(0, y, 0);
+    return { id: def.id, label: def.label, detail: def.detail, position: [point.x, point.y, point.z] };
+  });
+}
+
+interface ModelProps {
+  autoRotate: boolean;
+  activeId: string | null;
+  onSelect: (id: string | null) => void;
+}
+
+function Model({ autoRotate, activeId, onSelect }: ModelProps) {
   const { scene } = useGLTF(MODEL_URL);
   const ref = useRef<THREE.Group>(null);
-  const [active, setActive] = useState<string | null>(null);
 
   // Sketchfab exports vary wildly in scale/origin — normalize to a fixed
   // bounding size centered at the origin so it frames consistently.
-  const normalized = useMemo(() => {
+  const { object, hotspots } = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);
 
-    // The Sketchfab export bakes an arbitrary camera-facing rotation into a
-    // parent node, so the mesh tumbles in on a diagonal instead of standing
-    // upright. Cancel it: rotate the root by the inverse of the mesh's
-    // current world rotation so the mesh's own axes end up world-aligned.
-    let meshNode: THREE.Object3D | null = null;
-    clone.traverse((child) => {
-      if (!meshNode && child instanceof THREE.Mesh) meshNode = child;
-    });
+    const meshNode = findFirstMesh(clone);
+
+    // The source mesh's long axis can be authored at an arbitrary diagonal
+    // angle (not just a 90°-multiple tilt), so find it via PCA on the actual
+    // vertex cloud and rotate that exact axis onto world Y — this is what
+    // makes the helix stand upright regardless of how it was exported.
     if (meshNode) {
-      const worldQuat = new THREE.Quaternion();
-      (meshNode as THREE.Object3D).getWorldQuaternion(worldQuat);
-      clone.quaternion.copy(worldQuat.invert());
+      const posAttr = meshNode.geometry.attributes.position;
+      const step = Math.max(1, Math.floor(posAttr.count / 1000));
+      const samples: THREE.Vector3[] = [];
+      const tmp = new THREE.Vector3();
+      for (let i = 0; i < posAttr.count; i += step) {
+        tmp.fromBufferAttribute(posAttr, i);
+        tmp.applyMatrix4(meshNode.matrixWorld);
+        samples.push(tmp.clone());
+      }
+      const axis = principalAxis(samples);
+      clone.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(axis.normalize(), new THREE.Vector3(0, 1, 0)));
       clone.updateMatrixWorld(true);
     }
 
@@ -62,6 +142,7 @@ function Model({ autoRotate }: { autoRotate: boolean }) {
     // and pushes the model far outside the camera's view frustum.
     clone.scale.setScalar(scale);
     clone.position.copy(center).multiplyScalar(-scale);
+    clone.updateMatrixWorld(true);
 
     // The source PBR material reads near-black without an HDRI environment
     // (no reflections to light the metal/roughness response) — cap metalness
@@ -76,7 +157,14 @@ function Model({ autoRotate }: { autoRotate: boolean }) {
       }
     });
 
-    return clone;
+    const finalBox = new THREE.Box3().setFromObject(clone);
+    const finalSize = new THREE.Vector3();
+    finalBox.getSize(finalSize);
+    const resolvedHotspots = meshNode
+      ? resolveHotspots(meshNode, finalSize.y / 2, Math.max(finalSize.x, finalSize.y, finalSize.z))
+      : [];
+
+    return { object: clone, hotspots: resolvedHotspots };
   }, [scene]);
 
   useFrame((_, delta) => {
@@ -85,26 +173,20 @@ function Model({ autoRotate }: { autoRotate: boolean }) {
 
   return (
     <group ref={ref}>
-      <primitive object={normalized} />
-      {HOTSPOTS.map((h) => (
+      <primitive object={object} />
+      {hotspots.map((h) => (
         <Html key={h.id} position={h.position} center distanceFactor={9} zIndexRange={[20, 0]}>
-          <div className="relative flex items-center justify-center">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setActive((cur) => (cur === h.id ? null : h.id));
-              }}
-              aria-label={h.label}
-              className="h-3 w-3 rounded-full border-2 border-[#fdfcf9] bg-accent shadow-[0_0_0_3px_rgba(160,82,45,0.25)] hover:scale-125 transition-transform cursor-pointer"
-            />
-            {active === h.id && (
-              <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-44 rounded-sm border border-border bg-surface-raised px-3 py-2 shadow-[0_4px_12px_rgba(20,19,17,0.15)] text-left">
-                <p className="font-mono text-[10px] uppercase tracking-wide text-accent mb-0.5">{h.label}</p>
-                <p className="text-[11px] text-muted leading-snug">{h.detail}</p>
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(activeId === h.id ? null : h.id);
+            }}
+            aria-label={h.label}
+            className={`h-3 w-3 rounded-full border-2 border-[#fdfcf9] shadow-[0_0_0_3px_rgba(160,82,45,0.25)] hover:scale-125 transition-transform cursor-pointer ${
+              activeId === h.id ? "bg-foreground scale-125" : "bg-accent"
+            }`}
+          />
         </Html>
       ))}
     </group>
@@ -120,8 +202,11 @@ interface DnaHelixModelProps {
 }
 
 export default function DnaHelixModel({ autoRotate = true, interactive = true, className }: DnaHelixModelProps) {
+  const [active, setActive] = useState<string | null>(null);
+  const activeDef = HOTSPOT_DEFS.find((d) => d.id === active) ?? null;
+
   return (
-    <div className={className}>
+    <div className={`relative ${className ?? ""}`}>
       <Canvas dpr={[1, 2]} camera={{ position: [3.0, 0, 5.2], fov: 30 }} gl={{ antialias: true, alpha: true }}>
         <hemisphereLight args={["#fdfcf9", "#3a372f", 1.1]} />
         <ambientLight intensity={0.5} />
@@ -129,13 +214,33 @@ export default function DnaHelixModel({ autoRotate = true, interactive = true, c
         <pointLight position={[-5, -4, -5]} intensity={35} color="#f2efe8" />
         <pointLight position={[0, 6, -4]} intensity={30} color="#ffffff" />
         <Suspense fallback={null}>
-          <Model autoRotate={autoRotate} />
+          <Model autoRotate={autoRotate} activeId={active} onSelect={setActive} />
           <ContactShadows position={[0, -4.05, 0]} opacity={0.35} scale={10} blur={2.4} far={5} color="#141311" />
         </Suspense>
         {interactive && (
           <OrbitControls enablePan={false} enableZoom minDistance={3} maxDistance={10} autoRotate={false} />
         )}
       </Canvas>
+
+      {/* Fixed info panel — stays in one place regardless of which dot is
+          active or how the model has rotated, instead of a card floating
+          at the (moving) 3D hotspot position. */}
+      {activeDef && (
+        <div className="absolute bottom-4 left-4 w-56 rounded-sm border border-border bg-surface-raised px-3 py-2.5 shadow-[0_4px_12px_rgba(20,19,17,0.15)]">
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-mono text-[10px] uppercase tracking-wide text-accent">{activeDef.label}</p>
+            <button
+              type="button"
+              onClick={() => setActive(null)}
+              aria-label="Close"
+              className="text-muted hover:text-foreground leading-none text-sm cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+          <p className="text-[11px] text-muted leading-snug mt-1">{activeDef.detail}</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Paper & Ink editorial palette — adapted from the Lyzr basecode design
+/* Paper & Ink editorial palette
  * system: warm parchment ground, near-black ink, terracotta accent, sharp
  * 2px radius. DNA base-pair colors stay separate (biological data, not
  * chrome) and are set directly in the 3D helix component. */
@@ -21,7 +21,7 @@
   --risk-high: #9e3b28;
 }
 
-/* Dark is opt-in via a `.dark` class (matching the Lyzr basecode pattern),
+/* Dark is opt-in via a `.dark` class,
  * not automatic OS-preference switching — light Paper & Ink is the default. */
 .dark {
   --background: #151412;
