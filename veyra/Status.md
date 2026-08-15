@@ -10,10 +10,15 @@ failure was caused by POCL's stale user cache; VEYRA now uses
 ASGI-compatible transport facade, and `python -m mcp.server` works from the
 repository root through the compatibility package.
 
-Rule Set 3 is now **VERIFIED** in the current main environment after handling
-LightGBM's missing regressor `_n_classes` attribute. Its native activity score
-is intentionally not represented as a 0–1 probability. Rule Set 2 remains
-**UNVERIFIED/INCOMPATIBLE** because of its legacy sklearn pickle dependency.
+Rule Set 3 has `availability=missing` in the current main environment (the
+rs3 package is not installed). The system correctly reports this status and
+falls back to lower-priority verified models. Its native activity score is
+intentionally not represented as a 0–1 probability when available. Rule Set 2
+has `availability=incompatible` in the main environment due to its legacy
+sklearn pickle dependency (scikit-learn ≤0.16.1 required, incompatible with
+Python 3.12 setuptools). An isolated runtime can be provisioned via
+`veyra models setup rule_set_2` in a trusted legacy Python environment, but
+in the current main environment auto-selection falls back to Doench 2014.
 The authoritative details are in `backend/FINAL_COMPLETE_REPORT.md`.
 
 ## Verification Metadata
@@ -47,7 +52,7 @@ The authoritative details are in `backend/FINAL_COMPLETE_REPORT.md`.
 | Documentation | COMPLETE | 19 files updated | - | None |
 | Cas-OFFinder Integration | COMPLETE | Bulge-aware search implemented | 26/26 | CPU-only mode |
 | Black-Box Verification | COMPLETE | All 4 interfaces verified | 10/10 PASS | Real engine execution |
-| On-Target Efficiency | COMPLETE | Rule Set 3 verified with LightGBM compatibility shim; Doench 2014 verified; explicit runtime management; transparent reporting | 38/38 | Rule Set 2 needs trusted legacy sklearn runtime; Rule Set 3 native score is not 0–1 |
+| On-Target Efficiency | COMPLETE | Rule Set 3 has availability=missing in main env (rs3 package not installed); Doench 2014 verified; explicit runtime management with transparent auto-fallback reporting; model registry records availability states | 38/38 | Rule Set 2 has availability=incompatible in main env (sklearn pickle); isolated runtime provisioning requires Python 3.8; auto-fallback to Doench 2014 when models unavailable; Rule Set 3 native activity score not 0–1 when available |
 
 ## Detailed Subsystem Tables
 
@@ -185,9 +190,9 @@ Warnings: 7
 4. **DNA→RNA conversion** — ViennaRNA folds RNA; DNA sequences converted to RNA (T→U) before folding
 5. **Seed anchor** — Only `pam_proximal` anchor currently supported
 6. **CPU-only Cas-OFFinder** — Slower than GPU-accelerated mode
-7. **Rule Set 2 (Azimuth)**: Incompatible in main env — sklearn ≤0.16.1 needed but Python 3.12 requires sklearn 1.9+; isolated runtime provisioning available via `models setup rule_set_2`; auto-falls back to Doench 2014 with transparent reporting; explicit `model="rule_set_2"` returns error
-8. **Rule Set 3 (Doench 2021)**: Verified in main env with an `_n_classes=0` LightGBM compatibility shim; native activity scores are not probabilities in `[0,1]`
-9. **Model provisioning in isolated runtimes**: Requires compatible Python versions (3.8 for legacy sklearn/lightgbm); if unavailable, provisioning may fail
+7. **Rule Set 2 (Azimuth)**: Incompatible in main env u2014 sklearn u00b20.16.1 needed but Python 3.12 requires sklearn 1.9+; isolated runtime provisioning available via `models setup rule_set_2` in a trusted legacy Python 3.8 environment; in the current main environment auto-selection falls back to Doench 2014 with transparent reporting (model registry records `availability=incompatible`, `runtime_action=failed`); explicit `model="rule_set_2"` returns error
+8. **Rule Set 3 (Doench 2021)**: Has `availability=missing` in the main environment (rs3 package not installed). An `_n_classes=0` LightGBM compatibility shim exists in the codebase for when rs3 is installed in an isolated runtime. In the current main environment, auto-selection falls back to Doench 2014. When available, native activity scores are not probabilities in [0,1]
+9. **Model provisioning in isolated runtimes**: Requires compatible Python versions (3.8 for legacy sklearn/lightgbm dependencies). In the current Python 3.12 environment, provisioning of Rule Set 2 and Rule Set 3 fails with dependency resolution errors. The model runtime manager correctly reports `availability=incompatible`/`missing` and falls back to Doench 2014. No `pip install --break-system-packages` or `sudo pip install` is used — only trusted internal `MODEL_SPECS` definitions are respected.
 
 ## Next Recommended Work
 

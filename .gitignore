@@ -98,3 +98,4 @@ backend/cache/model_runtime/
 
 veyra/cache/
 veyra/mcp/
+veyra/backend/cache/model_runtime/
