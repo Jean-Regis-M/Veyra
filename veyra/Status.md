@@ -180,13 +180,14 @@ Warnings: 7
 | 20 | DNA bulge detection | GCGCGCGCGCGCGCGCGCGC, bulge=1 | DNA bulges detected | ✅ |
 | 21 | RNA bulge detection | GCGCGCGCGCGCGCGCGCGC, bulge=1 | RNA bulges detected | ✅ |
 | 22 | Analyze mismatch seed | alignment-aware analysis | Seed/distal classified | ✅ |
-| 23 | on-target efficiency | AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA | score=0.025 (Doench 2014) | ✅ |
+| 23 | on-target efficiency | AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA | score=0.025 (Doench 2014), score=-0.941228 (Rule Set 3) | ✅ |
 
 ## Known Limitations
 
 1. **CFD scoring not supported for bulged candidates** — `cfd_status = "unsupported_bulge"` for DNA/RNA bulge candidates
 2. **BWA aln uses quality-weighted mismatches** — not pure CRISPR mismatch counting
 3. **GRCh38.p14 not available** — full human genome not at expected path (E. coli used for testing)
+4. **Rule Set 2 requires Python 2.7** — Azimuth 2.0 needs scikit-learn 0.17.1 with Python 2.7. Provisioning available via `veysa models setup rule_set_2` (requires Conda/micromamba)
 4. **DNA→RNA conversion** — ViennaRNA folds RNA; DNA sequences converted to RNA (T→U) before folding
 5. **Seed anchor** — Only `pam_proximal` anchor currently supported
 6. **CPU-only Cas-OFFinder** — Slower than GPU-accelerated mode

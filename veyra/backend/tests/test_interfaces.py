@@ -1223,6 +1223,91 @@ class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
             self.assertEqual(result.summary["model_used"], "rule_set_3")
             self.assertIn("ontarget_score_rule_set_3", result.summary)
 
+    def test_python_api_ontarget_rule_set_2(self):
+        """Test explicit Rule Set 2 selection when its runtime is available.
+        
+        Rule Set 2 requires Python 2.7 with scikit-learn 0.17.1 (Azimuth 2.0).
+        In the current environment without Python 2.7, this should return an error.
+        """
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="rule_set_2",
+        )
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        # Rule Set 2 should fail with model_unavailable in current environment
+        self.assertTrue(result.errors)
+        self.assertEqual(result.summary["confidence_flag"], "model_unavailable")
+        self.assertEqual(result.summary["requested_model"], "rule_set_2")
+        self.assertIn("Python 2.7", result.errors[0] or "")
+        self.assertIn("scikit-learn 0.17.1", result.errors[0] or "")
+
+    def test_rule_set_2_runtime_discovery(self):
+        """Test Rule Set 2 runtime discovery functions."""
+        from core.model_runtime import detect_python_runtimes, detect_conda_environments, find_compatible_python27_runtime
+        
+        # Test Python runtime detection
+        python_runtimes = detect_python_runtimes()
+        self.assertIn("python3", python_runtimes)
+        self.assertIn("python27", python_runtimes)
+        
+        # Test Conda environment detection
+        conda_envs = detect_conda_environments()
+        self.assertIsInstance(conda_envs, list)
+        
+        # Test compatible Python 2.7 runtime
+        compatible_rt = find_compatible_python27_runtime()
+        # In current environment, should be None (no Python 2.7 available)
+        if compatible_rt:
+            self.assertIn("python_executable", compatible_rt)
+            self.assertIn("2.7", compatible_rt.get("python_version", ""))
+
+    def test_rule_set_2_adapter(self):
+        """Test Rule Set 2 adapter functions."""
+        from core.rule_set_2_adapter import get_rule_set_2_runtime_info, create_rule_set_2_runner_script
+        
+        # Test runtime info
+        runtime_info = get_rule_set_2_runtime_info()
+        self.assertIsInstance(runtime_info, object)
+        self.assertTrue(hasattr(runtime_info, "runtime_path"))
+        self.assertTrue(hasattr(runtime_info, "python_executable"))
+        
+        # Test runner script creation
+        runner_script = create_rule_set_2_runner_script()
+        self.assertIsInstance(runner_script, str)
+        self.assertIn("import json", runner_script)
+        self.assertIn("import sys", runner_script)
+        self.assertIn("azimuth.model_comparison", runner_script)
+
+    def test_rule_set_2_model_registry(self):
+        """Test Rule Set 2 model registry information."""
+        from core.model_registry import get_model_info
+        
+        info = get_model_info("rule_set_2")
+        self.assertIsNotNone(info)
+        self.assertEqual(info.model_id, "rule_set_2")
+        self.assertEqual(info.version, "2.0")
+        self.assertIn("Azimuth 2.0", info.source)
+        self.assertIn("scikit-learn", info.dependencies)
+        self.assertIn("0.17.1", info.dependencies.get("scikit-learn", ""))
+        self.assertIn("Python 2.7", info.error_message or "")
+
+    def test_rule_set_2_auto_selection_fallback(self):
+        """Test that auto-selection falls back correctly when Rule Set 2 is unavailable."""
+        from api import predict_ontarget_efficiency
+        
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+        )
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        self.assertFalse(result.errors)
+        # Should select Rule Set 3 (highest priority verified model)
+        self.assertEqual(result.summary["model_used"], "rule_set_3")
+        self.assertFalse(result.summary["fallback_used"])
+        self.assertIn("rule_set_3", result.summary["fallback_chain"][0]["model"])
+
     def test_python_api_ontarget_auto(self):
         """Test Python API predict_ontarget_efficiency with auto.
         

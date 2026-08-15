@@ -64,12 +64,15 @@ When `model="auto"` falls back, the response includes:
 - **Scale**: native RS3 activity score; not bounded to 0–1
 - **Reference Value**: For test sequence `AAAAGGCGCGCGCGCGCGCGGGTTTAAA`, score = `-0.9412279161596062`
 
-### Rule Set 2 (Doench 2016 / Azimuth / Fusi)
+### Rule Set 2 (Doench 2016 / Azimuth 2.0)
 - **Source**: Doench et al., Nature Biotechnology 2016 (PMID: 26825659)
 - **Implementation**: AdaBoost Regressor (scikit-learn) with nucleotide/positional features
-- **Model file**: `V3_model_nopos.pickle` (AdaBoost regressor)
-- **Status**: **INCOMPATIBLE** — Pickled model requires scikit-learn ≤ 0.16.1, but 1.9.0 is installed
-- **Error**: `ModuleNotFoundError: No module named 'sklearn.ensemble._gb_losses'`
+- **Model file**: `V3_model_nopos.pickle` (AdaBoost regressor from Azimuth 2.0)
+- **Status**: **INCOMPATIBLE** — Requires Python 2.7 with scikit-learn 0.17.1 (Azimuth 2.0 official specification)
+- **Error**: Python 2.7 and legacy dependencies not available in current environment
+- **Provisioning**: Available via `veysa models setup rule_set_2` or `veyra models setup rule_set_2` (requires Conda/micromamba)
+- **Architecture**: Uses subprocess JSON protocol with isolated Python 2.7 runtime
+- **Reference**: https://github.com/MicrosoftResearch/Azimuth
 
 ### Doench 2014 (Rule Set 1) — Fallback
 - **Source**: Doench et al., Nature Biotechnology 2014 (PMID: 25184501)
@@ -281,7 +284,7 @@ veyra models check
 
 ## Limitations
 
-1. **Rule Set 2**: Full Azimuth model unavailable due to sklearn 1.9+ incompatibility with legacy pickled model.
+1. **Rule Set 2**: Requires Python 2.7 with scikit-learn 0.17.1 (Azimuth 2.0). Provisioning available via `models setup rule_set_2` (requires Conda/micromamba).
 2. **Rule Set 3**: **VERIFIED** - Available in main environment with LightGBM compatibility shim.
 3. **PAM specificity**: Only validated for NGG PAM (SpCas9).
 4. **Sequence context**: Requires exact 30-mer composition; no auto-detection of spacer position.

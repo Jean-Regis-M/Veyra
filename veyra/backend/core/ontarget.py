@@ -237,23 +237,27 @@ def _execute_model(model_id: str, seq: str) -> tuple[float | None, str]:
     rt_status = get_model_status(model_id)
     runtime_path = rt_status.get("runtime_path")
 
-    # Try isolated runtime first if it exists and is verified
+     # Try isolated runtime first if it exists and is verified
     if runtime_path and os.path.exists(runtime_path) and rt_status.get("state") == RuntimeState.VERIFIED:
-        python_bin = os.path.join(runtime_path, "bin", "python")
-        if os.path.exists(python_bin):
-            score, source = _run_in_isolated_runtime(model_id, python_bin, seq)
-            if score is not None:
-                return score, f"{source} (isolated runtime: {runtime_path})"
+        # Special handling for Rule Set 2 with subprocess JSON protocol
+        if model_id == "rule_set_2":
+            from core.rule_set_2_adapter import run_rule_set_2_prediction, get_rule_set_2_runtime_info
+            runtime_info = get_rule_set_2_runtime_info()
+            if runtime_info.python_executable and os.path.exists(runtime_info.python_executable):
+                score, source = run_rule_set_2_prediction(seq, runtime_info)
+                if score is not None:
+                    return score, f"{source} (isolated runtime: {runtime_path})"
+        else:
+            # Standard subprocess execution for other models
+            python_bin = os.path.join(runtime_path, "bin", "python")
+            if os.path.exists(python_bin):
+                score, source = _run_in_isolated_runtime(model_id, python_bin, seq)
+                if score is not None:
+                    return score, f"{source} (isolated runtime: {runtime_path})"
 
     # Try main environment
     if model_id == "rule_set_2":
-        # Try azimuth first, then pickled model
-        score = _predict_rs2_azimuth(seq)
-        if score is not None:
-            return score, "azimuth (Doench 2016 / Azimuth 2.0)"
-        score = _predict_rs2_model(seq)
-        if score is not None:
-            return score, "fusiDoench V3_model_nopos (Doench 2016 / Azimuth 2.0)"
+        # Rule Set 2 requires isolated runtime, cannot run in main environment
         return None, "unavailable"
 
     elif model_id == "rule_set_3":

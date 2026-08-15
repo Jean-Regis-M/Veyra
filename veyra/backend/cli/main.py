@@ -290,19 +290,35 @@ def _cmd_models_describe(args):
 
 def _cmd_models_check(args):
     """Handle models check command."""
+    from core.model_runtime import list_model_runtimes, detect_python_runtimes, detect_conda_environments
     from core.model_registry import get_model_registry, get_model_fallback_info
-    from core.model_runtime import list_model_runtimes
     from schemas.canonical import VeyraResult
 
     registry = get_model_registry()
     models = []
+    
+    # Add runtime discovery information
+    python_runtimes = detect_python_runtimes()
+    conda_envs = detect_conda_environments()
+    
     for model_id in ["rule_set_3", "rule_set_2", "doench_2014"]:
         fb_info = get_model_fallback_info(model_id)
-        fb_info["runtime"] = list_model_runtimes()[0] if model_id == "rule_set_3" else None
+        fb_info["runtime"] = None
         for rt in list_model_runtimes():
             if rt["model_id"] == model_id:
                 fb_info["runtime"] = rt
                 break
+        
+        # Add runtime discovery info for Rule Set 2
+        if model_id == "rule_set_2":
+            fb_info["runtime_discovery"] = {
+                "python27_available": len(python_runtimes.get("python27", [])) > 0,
+                "conda_available": len(python_runtimes.get("conda", [])) > 0 or len(python_runtimes.get("micromamba", [])) > 0 or len(python_runtimes.get("mamba", [])) > 0,
+                "existing_conda_envs": len(conda_envs),
+                "python27_runtimes": python_runtimes.get("python27", []),
+                "conda_managers": python_runtimes.get("conda", []) + python_runtimes.get("micromamba", []) + python_runtimes.get("mamba", []),
+            }
+        
         models.append(fb_info)
 
     result = VeyraResult(

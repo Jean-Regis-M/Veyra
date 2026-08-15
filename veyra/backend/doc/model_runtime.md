@@ -6,15 +6,79 @@ The VEYRA Model Runtime Manager (`backend/core/model_runtime.py`) manages isolat
 
 ## Architecture
 
+VEYRA supports a **three-environment architecture** to maintain isolation and compatibility:
+
+### Three-Environment Architecture
+
 ```
-data/model_envs/
-├── rule_set_2/          # Isolated venv with sklearn==0.16.1
-│   ├── bin/python
-│   └── lib/python3.12/site-packages/
-├── rule_set_3/          # Isolated venv with rs3 + compatible lightgbm
-│   ├── bin/python
-│   └── lib/.../
-└── doench_2014/         # Not needed (pure Python, built-in)
+MAIN VEYRA Environment
+├── Python: Current system Python (3.12.3)
+├── Location: backend/venv/
+└── Status: Always available, never modified
+
+RULE SET 3 Environment  
+├── Python: Python 3.x (compatible with rs3 0.0.15)
+├── Location: data/model_envs/rule_set_3/
+└── Status: ✅ VERIFIED (working in main env with compatibility shim)
+
+RULE SET 2 Environment
+├── Python: Python 2.7 (required by Azimuth 2.0)
+├── Location: data/model_envs/rule_set_2/
+└── Status: ❌ INCOMPATIBLE (requires Conda/micromamba provisioning)
+```
+
+## Cross-Platform Runtime Discovery
+
+VEYRA automatically detects available runtimes:
+
+### Python Runtime Discovery
+- System Python 2.7 executables: `python2.7`, `python2`, `python27`
+- System Python 3 executables: `python3`, `python3.12`, `python3.11`, etc.
+- Conda environment managers: `conda`, `micromamba`, `mamba`
+
+### Conda Environment Detection
+- Lists existing Conda environments
+- Identifies environments with Python 2.7
+- Reports package manager availability
+
+## Rule Set 2 Special Requirements
+
+### Authoritative Specification (Azimuth 2.0)
+- **Model:** Azimuth 2.0 (Microsoft Research)
+- **Python:** 2.7 (primary target)
+- **scikit-learn:** 0.17.1 (exact version from setup.py)
+- **numpy:** >=1.9.0
+- **scipy:** >=0.15.1  
+- **pandas:** >=0.17.1
+- **biopython:** >=1.65
+- **matplotlib:** >=1.4.0
+- **Source:** https://github.com/MicrosoftResearch/Azimuth
+
+### Provisioning Strategy
+1. **Linux:** Prefer Conda/micromamba environment creation
+2. **Windows:** Use project-local Conda environment
+3. **Fallback:** System Python 2.7 if available
+
+### Subprocess JSON Protocol
+Rule Set 2 uses isolated execution with JSON protocol:
+
+**Request:**
+```json
+{
+  "context_sequence": "AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "model_id": "rule_set_2", 
+  "model_version": "2.0",
+  "score": 0.85,
+  "runtime_python": "Python 2.7.18",
+  "provenance": "Azimuth 2.0 (Doench et al. 2016)"
+}
 ```
 
 Runtime state is persisted in:

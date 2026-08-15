@@ -20,6 +20,7 @@ import os
 import sys
 import subprocess
 import time
+import platform
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional
 from pathlib import Path
@@ -44,26 +45,32 @@ MODEL_SPECS: dict[str, dict[str, Any]] = {
     "rule_set_2": {
         "model_id": "rule_set_2",
         "display_name": "Rule Set 2 (Doench 2016 / Azimuth / Fusi)",
-        "version": "2016",
-        "source": "Doench et al., Nature Biotechnology 2016 (PMID: 26825659); Azimuth 2.0",
+        "version": "2.0",
+        "source": "Doench et al., Nature Biotechnology 2016 (PMID: 26825659); Azimuth 2.0 (Microsoft Research)",
         "implementation": "AdaBoost Regressor (scikit-learn) with nucleotide/positional features",
-        "expected_python": "3.8",  # sklearn 0.16.1 needs Python <= 3.8
+        "expected_python": "2.7",  # Azimuth 2.0 officially supports Python 2.7
         "dependency_spec": {
-            "scikit-learn": "==0.16.1",
-            "numpy": "==1.16.6",
-            "pandas": "==0.24.2",
+            "scikit-learn": "==0.17.1",  # Authoritative requirement from Azimuth setup.py
+            "numpy": ">=1.9.0",           # Compatible with scikit-learn 0.17.1
+            "scipy": ">=0.15.1",         # Required by Azimuth
+            "pandas": ">=0.17.1",        # Required by Azimuth
+            "biopython": ">=1.65",       # Required by Azimuth
+            "matplotlib": ">=1.4.0",     # Required by Azimuth
         },
         "resource_source": {
-            "type": "file",
-            "path": "refrences.local/data/tools/crisporWebsite/bin/fusiDoench/saved_models/V3_model_nopos.pickle",
+            "type": "package",
+            "path": "refrences.local/data/tools/crisporWebsite/bin/Azimuth-2.0",
+            "model_file": "azimuth/saved_models/V3_model_nopos.pickle",
         },
-        "runner_entrypoint": "rs2_predict",  # internal function name
+        "runner_entrypoint": "azimuth_predict",
         "verification_case": {
             "context_sequence": "AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA",
-            "expected_range": [-10.0, 10.0],
+            "expected_range": [0.0, 1.0],  # Azimuth outputs 0-1 probability scores
         },
-        "license": "MIT (Azimuth 2.0)",
-        "provenance": "https://github.com/gpp-rnd/azimuth",
+        "license": "BSD",
+        "provenance": "https://github.com/MicrosoftResearch/Azimuth",
+        "package_manager": "conda",
+        "environment_type": "legacy_python27",
     },
     "rule_set_3": {
         "model_id": "rule_set_3",
@@ -235,6 +242,212 @@ def get_model_runtime_path(model_id: str) -> str:
     return os.path.join(_MODEL_ENVS_DIR, model_id)
 
 
+def detect_python_runtimes() -> dict[str, list[dict[str, Any]]]:
+    """Detect available Python runtimes on the system.
+    
+    Returns:
+        Dict mapping runtime types to list of available runtimes.
+    """
+    runtimes = {
+        "python27": [],
+        "python3": [],
+        "conda": [],
+        "micromamba": [],
+        "mamba": [],
+    }
+    
+    # Check for Python 2.7 executables
+    python27_names = ["python2.7", "python2", "python27"]
+    for py_name in python27_names:
+        try:
+            result = subprocess.run(
+                [py_name, "--version"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                version_output = result.stderr.strip() or result.stdout.strip()
+                if "2.7" in version_output:
+                    runtimes["python27"].append({
+                        "executable": py_name,
+                        "version": version_output,
+                        "source": "PATH",
+                        "type": "system"
+                    })
+        except Exception:
+            continue
+    
+    # Check for Python 3 executables
+    python3_names = ["python3", "python3.12", "python3.11", "python3.10", "python3.9", "python3.8", "python"]
+    for py_name in python3_names:
+        try:
+            result = subprocess.run(
+                [py_name, "--version"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                version_output = result.stderr.strip() or result.stdout.strip()
+                if "3." in version_output:
+                    runtimes["python3"].append({
+                        "executable": py_name,
+                        "version": version_output,
+                        "source": "PATH",
+                        "type": "system"
+                    })
+        except Exception:
+            continue
+    
+    # Check for Conda environment managers
+    conda_names = ["conda", "micromamba", "mamba"]
+    for conda_name in conda_names:
+        try:
+            result = subprocess.run(
+                [conda_name, "--version"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                version_output = result.stdout.strip()
+                runtime_type = conda_name
+                if conda_name == "conda":
+                    runtime_type = "conda"
+                elif conda_name == "micromamba":
+                    runtime_type = "micromamba"
+                else:
+                    runtime_type = "mamba"
+                    
+                runtimes[runtime_type].append({
+                    "executable": conda_name,
+                    "version": version_output,
+                    "source": "PATH",
+                    "type": "environment_manager"
+                })
+        except Exception:
+            continue
+    
+    return runtimes
+
+
+def detect_conda_environments() -> list[dict[str, Any]]:
+    """Detect existing Conda environments that might have Python 2.7."""
+    environments = []
+    
+    # Try to find conda executable
+    conda_executables = ["conda", "micromamba", "mamba"]
+    conda_cmd = None
+    for cmd in conda_executables:
+        try:
+            result = subprocess.run(
+                [cmd, "--version"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                conda_cmd = cmd
+                break
+        except Exception:
+            continue
+    
+    if not conda_cmd:
+        return environments
+    
+    # List conda environments
+    try:
+        result = subprocess.run(
+            [conda_cmd, "env", "list", "--json"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            envs = json.loads(result.stdout.strip())
+            for env_name, env_path in envs.get("envs", {}).items():
+                # Check if this environment has Python 2.7
+                python_executable = os.path.join(env_path, "bin", "python")
+                if os.path.exists(python_executable):
+                    try:
+                        result = subprocess.run(
+                            [python_executable, "--version"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if result.returncode == 0:
+                            version_output = result.stderr.strip() or result.stdout.strip()
+                            if "2.7" in version_output:
+                                environments.append({
+                                    "name": env_name,
+                                    "path": env_path,
+                                    "python_executable": python_executable,
+                                    "python_version": version_output,
+                                    "package_manager": conda_cmd,
+                                    "type": "conda_environment"
+                                })
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    
+    return environments
+
+
+def find_compatible_python27_runtime() -> Optional[dict[str, Any]]:
+    """Find a compatible Python 2.7 runtime for Rule Set 2.
+    
+    Search order:
+    1. Existing project-local isolated environment
+    2. Existing Conda environment with Python 2.7
+    3. System Python 2.7
+    
+    Returns:
+        Runtime info dict or None if not found.
+    """
+    # 1. Check existing project-local isolated environment
+    runtime_path = get_model_runtime_path("rule_set_2")
+    if os.path.exists(runtime_path):
+        python_executable = os.path.join(runtime_path, "bin", "python")
+        if os.path.exists(python_executable):
+            try:
+                result = subprocess.run(
+                    [python_executable, "--version"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    version_output = result.stderr.strip() or result.stdout.strip()
+                    if "2.7" in version_output:
+                        return {
+                            "type": "isolated",
+                            "path": runtime_path,
+                            "python_executable": python_executable,
+                            "python_version": version_output,
+                            "package_manager": "conda",
+                            "source": "project_local"
+                        }
+            except Exception:
+                pass
+    
+    # 2. Check existing Conda environments
+    conda_envs = detect_conda_environments()
+    for env in conda_envs:
+        if "2.7" in env.get("python_version", ""):
+            return {
+                "type": "conda_environment",
+                "path": env["path"],
+                "python_executable": env["python_executable"],
+                "python_version": env["python_version"],
+                "package_manager": env["package_manager"],
+                "source": "existing_conda"
+            }
+    
+    # 3. Check system Python 2.7
+    python27_runtimes = detect_python_runtimes().get("python27", [])
+    for runtime in python27_runtimes:
+        if runtime.get("source") == "PATH":
+            return {
+                "type": "system",
+                "path": None,
+                "python_executable": runtime["executable"],
+                "python_version": runtime["version"],
+                "package_manager": "system",
+                "source": "system_path"
+            }
+    
+    return None
+
+
 def get_model_status(model_id: str) -> dict[str, Any]:
     """Get the runtime status for a model.
 
@@ -286,6 +499,9 @@ def get_model_status(model_id: str) -> dict[str, Any]:
         "last_provision_at": info.last_provision_at,
         "last_verify_at": info.last_verify_at,
         "runtime_action": info.runtime_action,
+        "platform": platform.system(),
+        "runtime_type": spec.get("environment_type", "isolated"),
+        "package_manager": spec.get("package_manager", "unknown"),
     }
 
 
@@ -345,6 +561,145 @@ def _create_isolated_venv(model_id: str, expected_python: Optional[str] = None) 
         return False, f"venv creation failed: {e.stderr or e.stdout or str(e)}"
     except Exception as e:
         return False, f"venv creation error: {e}"
+
+
+def _create_conda_environment(model_id: str, spec: dict[str, Any]) -> tuple[bool, str, str]:
+    """Create a Conda environment for Rule Set 2 with Python 2.7.
+    
+    Args:
+        model_id: Model identifier
+        spec: Model specification
+    
+    Returns:
+        (success, error_message, python_executable)
+    """
+    runtime_path = get_model_runtime_path(model_id)
+    
+    # Check if environment already exists
+    python_bin = os.path.join(runtime_path, "bin", "python")
+    if os.path.exists(python_bin):
+        return True, "", python_bin
+    
+    # Find conda executable
+    conda_cmd = None
+    conda_executables = ["conda", "micromamba", "mamba"]
+    for cmd in conda_executables:
+        try:
+            result = subprocess.run(
+                [cmd, "--version"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                conda_cmd = cmd
+                break
+        except Exception:
+            continue
+    
+    if not conda_cmd:
+        return False, "No conda environment manager found (tried: conda, micromamba, mamba)", ""
+    
+    # Get environment name
+    env_name = spec.get("environment_name", model_id)
+    python_version = spec.get("expected_python", "2.7")
+    
+    try:
+        # Create conda environment with Python 2.7
+        cmd = [
+            conda_cmd, "create", "--yes", "--name", env_name,
+            f"python={python_version}",
+            "-c", "conda-forge"
+        ]
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True, text=True, timeout=120
+        )
+        
+        if result.returncode != 0:
+            return False, f"Conda environment creation failed: {result.stderr.strip()}", ""
+        
+        # Find the actual environment path
+        env_path = None
+        try:
+            result = subprocess.run(
+                [conda_cmd, "env", "list", "--json"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                envs = json.loads(result.stdout.strip())
+                env_path = envs.get("envs", {}).get(env_name)
+        except Exception:
+            pass
+        
+        if not env_path:
+            # Try default conda envs location
+            default_env_path = os.path.join(os.path.expanduser("~"), "miniconda3", "envs", env_name)
+            if os.path.exists(default_env_path):
+                env_path = default_env_path
+            else:
+                default_env_path = os.path.join(os.path.expanduser("~"), ".conda", "envs", env_name)
+                if os.path.exists(default_env_path):
+                    env_path = default_env_path
+        
+        if not env_path:
+            return False, "Could not determine conda environment path", ""
+        
+        # Install dependencies
+        deps = spec.get("dependency_spec", {})
+        for pkg, version in deps.items():
+            try:
+                subprocess.run(
+                    [conda_cmd, "install", "--yes", "--name", env_name, f"{pkg}={version}"],
+                    capture_output=True, text=True, timeout=120, check=True
+                )
+            except subprocess.CalledProcessError as e:
+                return False, f"Failed to install {pkg}={version}: {e.stderr.strip()}", ""
+        
+        # Verify Python executable
+        python_bin = os.path.join(env_path, "bin", "python")
+        if not os.path.exists(python_bin):
+            # Try Windows path
+            python_bin = os.path.join(env_path, "python.exe")
+        
+        if not os.path.exists(python_bin):
+            return False, f"Python executable not found in {env_path}", ""
+        
+        # Verify Python version
+        try:
+            result = subprocess.run(
+                [python_bin, "--version"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                return False, f"Python executable not working: {result.stderr.strip()}", ""
+        except Exception as e:
+            return False, f"Python version check failed: {e}", ""
+        
+        # Update runtime path to point to conda environment
+        # Note: We need to handle the symlink or move the environment
+        # For now, we'll create a symlink from the expected location to the conda env
+        os.makedirs(_MODEL_ENVS_DIR, exist_ok=True)
+        target_path = os.path.join(_MODEL_ENVS_DIR, model_id)
+        
+        # Remove existing directory if it exists
+        if os.path.exists(target_path):
+            try:
+                import shutil
+                shutil.rmtree(target_path)
+            except Exception:
+                pass
+        
+        # Create symlink to conda environment
+        try:
+            os.symlink(env_path, target_path)
+        except Exception:
+            # If symlink fails, copy the path info but don't actually move files
+            pass
+        
+        return True, "", python_bin
+        
+    except Exception as e:
+        return False, f"Conda environment creation error: {e}", ""
 
 
 def _install_dependencies(model_id: str, dep_spec: dict[str, str]) -> tuple[bool, str, dict[str, str]]:
@@ -434,6 +789,12 @@ def _run_verification(model_id: str) -> tuple[bool, str]:
 
     # For models with isolated environments
     runtime_path = get_model_runtime_path(model_id)
+    
+    # Special handling for Rule Set 2 (uses subprocess JSON protocol)
+    if model_id == "rule_set_2":
+        return _verify_rule_set_2(runtime_path, spec)
+    
+    # Standard verification for other models
     python_bin = os.path.join(runtime_path, "bin", "python")
 
     if not os.path.exists(python_bin):
@@ -453,27 +814,7 @@ test_seq = "{test_seq}"
 expected_range = {expected_range}
 
 try:
-    if model_id == "rule_set_2":
-        import pickle, os
-        import numpy as np
-        model_path = "{spec["resource_source"]["path"]}"
-        if not os.path.exists(model_path):
-            print("ERROR:model file not found")
-            sys.exit(1)
-        # Check sklearn version
-        import sklearn
-        ver = sklearn.__version__
-        major, minor = map(int, ver.split(".")[:2])
-        if major > 0 or minor > 16:
-            print(f"ERROR:sklearn {ver} incompatible (need <=0.16.1)")
-            sys.exit(1)
-        with open(model_path, "rb") as f:
-            model_data = pickle.load(f, encoding="bytes")
-        # Basic load test
-        print("OK:model loaded with sklearn", ver)
-        sys.exit(0)
-
-    elif model_id == "rule_set_3":
+    if model_id == "rule_set_3":
         import rs3
         from rs3.seq import predict_seq, featurize_context, load_seq_model
         import joblib, os
@@ -490,7 +831,7 @@ try:
     sys.exit(1)
 
 except Exception as e:
-    print(f"ERROR:{{e}}")
+    print(f"ERROR:{e}")
     sys.exit(1)
 '''
 
@@ -518,6 +859,34 @@ except Exception as e:
             os.unlink(script_path)
         except Exception:
             pass
+
+
+def _verify_rule_set_2(runtime_path: str, spec: dict[str, Any]) -> tuple[bool, str]:
+    """Verify Rule Set 2 using subprocess JSON protocol."""
+    from core.rule_set_2_adapter import run_rule_set_2_prediction, get_rule_set_2_runtime_info
+    
+    # Get runtime info
+    runtime_info = get_rule_set_2_runtime_info()
+    if not runtime_info.python_executable or not os.path.exists(runtime_info.python_executable):
+        return False, f"Rule Set 2 runtime not available: {runtime_info.provisioning_status}"
+    
+    # Test with verification case
+    test_seq = spec["verification_case"]["context_sequence"]
+    expected_range = spec["verification_case"]["expected_range"]
+    
+    try:
+        score, source = run_rule_set_2_prediction(test_seq, runtime_info)
+        if score is None:
+            return False, f"Rule Set 2 prediction failed: {source}"
+        
+        # Check if score is within expected range
+        if not (expected_range[0] <= score <= expected_range[1]):
+            return False, f"Rule Set 2 score {score} out of expected range {expected_range}"
+        
+        return True, f"Rule Set 2 verified with score {score}"
+        
+    except Exception as e:
+        return False, f"Rule Set 2 verification error: {e}"
 
 
 def provision_model(model_id: str, force: bool = False) -> dict[str, Any]:
@@ -578,28 +947,61 @@ def provision_model(model_id: str, force: bool = False) -> dict[str, Any]:
         state[model_id] = info
         _save_state(state)
 
-        # Create isolated venv
-        success, result_msg = _create_isolated_venv(model_id, spec.get("expected_python"))
-        if not success:
-            info.state = RuntimeState.FAILED
-            info.last_error = result_msg
-            info.runtime_action = "failed"
-            state[model_id] = info
+        # Special handling for Rule Set 2 (requires Python 2.7 and Conda)
+        if model_id == "rule_set_2":
+            success, error_msg, python_bin = _create_conda_environment(model_id, spec)
+            if not success:
+                info.state = RuntimeState.FAILED
+                info.last_error = error_msg
+                info.runtime_action = "failed"
+                state[model_id] = info
+                _save_state(state)
+                return {
+                    "model_id": model_id,
+                    "action": "failed",
+                    "error": error_msg,
+                    "runtime_status": "failed",
+                }
+            
+            # Check Python version
+            try:
+                result = subprocess.run(
+                    [python_bin, "--version"],
+                    capture_output=True, text=True, timeout=10
+                )
+                python_version = result.stderr.strip() or result.stdout.strip()
+            except Exception:
+                python_version = "unknown"
+            
+            info.python_version = python_version
+            runtime_path = get_model_runtime_path(model_id)
+            info.runtime_path = runtime_path
+            info.state = RuntimeState.PROVISIONED
+            info.runtime_action = "provisioned"
             _save_state(state)
-            return {
-                "model_id": model_id,
-                "action": "failed",
-                "error": result_msg,
-                "runtime_status": "failed",
-            }
+        else:
+            # Standard venv creation for other models
+            success, result_msg = _create_isolated_venv(model_id, spec.get("expected_python"))
+            if not success:
+                info.state = RuntimeState.FAILED
+                info.last_error = result_msg
+                info.runtime_action = "failed"
+                state[model_id] = info
+                _save_state(state)
+                return {
+                    "model_id": model_id,
+                    "action": "failed",
+                    "error": result_msg,
+                    "runtime_status": "failed",
+                }
 
-        # Check Python version
-        info.python_version = result_msg
-        runtime_path = get_model_runtime_path(model_id)
-        info.runtime_path = runtime_path
-        info.state = RuntimeState.PROVISIONED
-        info.runtime_action = "provisioned"
-        _save_state(state)
+            # Check Python version
+            info.python_version = result_msg
+            runtime_path = get_model_runtime_path(model_id)
+            info.runtime_path = runtime_path
+            info.state = RuntimeState.PROVISIONED
+            info.runtime_action = "provisioned"
+            _save_state(state)
 
         # Install dependencies
         success, error, installed = _install_dependencies(model_id, spec.get("dependency_spec", {}))

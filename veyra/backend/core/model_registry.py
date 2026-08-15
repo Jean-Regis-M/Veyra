@@ -83,22 +83,26 @@ def _check_rule_set_2() -> ModelInfo:
     model = ModelInfo(
         model_id="rule_set_2",
         display_name="Rule Set 2 (Doench 2016 / Azimuth / Fusi)",
-        version="2016",
+        version="2.0",
         source="Doench et al., Nature Biotechnology 2016 (PMID: 26825659); Azimuth 2.0 (Microsoft Research)",
         implementation="AdaBoost Regressor (scikit-learn) with nucleotide/positional features",
-        resource_path="/home/hrirake/Desktop/hck15/veyra/refrences.local/data/tools/crisporWebsite/bin/fusiDoench/saved_models/V3_model_nopos.pickle",
+        resource_path="refrences.local/data/tools/crisporWebsite/bin/Azimuth-2.0",
         expected_context_length=30,
         expected_spacer_length=20,
         output_scale="0-1",
-        license="MIT (Azimuth 2.0)",
-        provenance="https://github.com/gpp-rnd/azimuth",
-        dependencies={"scikit-learn": "0.16.1 (required for pickled model)"},
+        license="BSD",
+        provenance="https://github.com/MicrosoftResearch/Azimuth",
+        dependencies={"scikit-learn": "0.17.1 (required for Azimuth 2.0)", "python": "2.7"},
     )
 
-    # Check if model file exists (read-only reference)
-    if not os.path.isfile(model.resource_path):
+    # Check if Azimuth directory exists (read-only reference)
+    azimuth_path = os.path.join(
+        os.path.dirname(_BACKEND_DIR),
+        "refrences.local", "data", "tools", "crisporWebsite", "bin", "Azimuth-2.0"
+    )
+    if not os.path.isdir(azimuth_path):
         model.availability = "missing"
-        model.error_message = f"Model file not found: {model.resource_path}"
+        model.error_message = f"Azimuth 2.0 directory not found: {azimuth_path}"
         return model
 
     model.installed = True
@@ -111,36 +115,26 @@ def _check_rule_set_2() -> ModelInfo:
         model.availability = "verified"
         model.runtime_path = rt_status.get("runtime_path", "")
         model.runtime_state = rt_status["state"]
-        model.runtime_action = "already_available"
+        model.runtime_action = rt_status.get("runtime_action", "already_available")
+        model.python_version = rt_status.get("python_version", "")
+        model.package_manager = rt_status.get("package_manager", "unknown")
         return model
 
-    # Check main environment compatibility
-    try:
-        import sklearn
-        sklearn_version = sklearn.__version__
-        model.dependencies["scikit-learn"] = f"{sklearn_version} (installed in main env)"
-
-        major, minor = map(int, sklearn_version.split(".")[:2])
-        if major == 0 and minor <= 16:
-            model.compatible = True
-        else:
-            model.compatible = False
-            model.availability = "incompatible"
-            model.error_message = (
-                f"Pickled Rule Set 2 model requires scikit-learn <= 0.16.1, "
-                f"but {sklearn_version} is installed. "
-                "An isolated runtime can be provisioned via 'models setup rule_set_2'."
-            )
-    except Exception as e:
-        model.availability = "error"
-        model.error_message = f"Failed to check sklearn version: {e}"
+    # Rule Set 2 requires isolated Python 2.7 environment - cannot run in main environment
+    model.compatible = False
+    model.verified = False
+    model.availability = "incompatible"
+    model.error_message = (
+        "Rule Set 2 requires Python 2.7 with scikit-learn 0.17.1 (Azimuth 2.0). "
+        "An isolated runtime can be provisioned via 'veysa models setup rule_set_2' or 'veyra models setup rule_set_2'. "
+        "This requires Conda/micromamba environment manager."
+    )
 
     model.runtime_state = rt_status.get("state", "not_provisioned")
     model.runtime_path = rt_status.get("runtime_path", "")
     model.runtime_action = rt_status.get("runtime_action", "none")
-
-    if not model.compatible and model.availability != "incompatible":
-        model.availability = "unverified"
+    model.python_version = rt_status.get("python_version", "")
+    model.package_manager = rt_status.get("package_manager", "unknown")
 
     return model
 
