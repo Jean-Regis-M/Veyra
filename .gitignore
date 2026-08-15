@@ -85,3 +85,6 @@ veyra/refrences.local/
 # Temporary files
 *.tmp
 *.temp
+
+# Cas-OFFinder build artifacts
+veyra/data/tools/cas-offinder/
