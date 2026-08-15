@@ -529,7 +529,7 @@ class TestMCPServer(unittest.TestCase):
         self.assertIn("compute_secondary_structure", TOOL_REGISTRY)
         self.assertIn("cas_offinder_search", TOOL_REGISTRY)
         self.assertIn("analyze_mismatch_seed", TOOL_REGISTRY)
-        self.assertEqual(len(TOOL_REGISTRY), 16)
+        self.assertEqual(len(TOOL_REGISTRY), 17)
 
 
 # =====================================================================

@@ -166,7 +166,7 @@ class TestToolsInterfaceParity(unittest.TestCase):
         """Test Python API tools list via MCP server."""
         from mcp.server import TOOL_REGISTRY
 
-        self.assertEqual(len(TOOL_REGISTRY), 16)
+        self.assertEqual(len(TOOL_REGISTRY), 17)
         self.assertIn("pam_scan", TOOL_REGISTRY)
         self.assertIn("offtarget_search", TOOL_REGISTRY)
         self.assertIn("compute_gc_content", TOOL_REGISTRY)
@@ -195,7 +195,7 @@ class TestToolsInterfaceParity(unittest.TestCase):
         response = client.get("/tools")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["total_tools"], 16)
+        self.assertEqual(data["total_tools"], 17)
 
 
 class TestCLIOutputFormats(unittest.TestCase):
@@ -1120,6 +1120,7 @@ class TestCasOFFinderInterfaceParity(unittest.TestCase):
             allow_bulge=True,
             max_dna_bulge=0,
             max_rna_bulge=0,
+            backend="cas_offinder",
         )
         self.assertEqual(result.tool, "cas_offinder_search")
         self.assertEqual(result.summary["backend"], "cas_offinder")
@@ -1153,6 +1154,7 @@ class TestCasOFFinderInterfaceParity(unittest.TestCase):
             "allow_bulge": True,
             "max_dna_bulge": 0,
             "max_rna_bulge": 0,
+            "backend": "cas_offinder",
         })
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -1177,3 +1179,228 @@ class TestCasOFFinderInterfaceParity(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOnTargetEfficiencyInterfaceParity(unittest.TestCase):
+    """Test that predict_ontarget_efficiency produces equivalent results across interfaces."""
+
+    CONTEXT_30MER = "AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA"  # 4+20+3+3 = 30
+
+    def test_python_api_ontarget_rule_set_2(self):
+        """Test Python API predict_ontarget_efficiency with rule_set_2.
+        
+        Explicit Rule Set 2 request: model is incompatible (sklearn version conflict),
+        returns error - explicit models NEVER fall back.
+        """
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="rule_set_2",
+        )
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        self.assertTrue(result.errors)
+        self.assertEqual(result.summary["confidence_flag"], "model_unavailable")
+        self.assertEqual(result.summary["requested_model"], "rule_set_2")
+        self.assertEqual(result.summary["selection"]["selection_status"], "failed")
+
+    def test_python_api_ontarget_rule_set_3(self):
+        """Test Python API predict_ontarget_efficiency with rule_set_3 (unavailable)."""
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="rule_set_3",
+        )
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        self.assertTrue(result.errors)
+        self.assertEqual(result.summary["confidence_flag"], "model_unavailable")
+        self.assertEqual(result.summary["requested_model"], "rule_set_3")
+
+    def test_python_api_ontarget_auto(self):
+        """Test Python API predict_ontarget_efficiency with auto.
+        
+        Auto selects highest-priority verified model (Doench 2014).
+        """
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+        )
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        self.assertFalse(result.errors)
+        self.assertEqual(result.summary["model_used"], "doench_2014")
+        self.assertEqual(result.summary["selection_status"], "selected")
+        self.assertIn("ontarget_score_doench_2014", result.summary)
+        self.assertEqual(result.summary["confidence_flag"], "ok")
+
+    def test_python_api_ontarget_both(self):
+        """Test Python API predict_ontarget_efficiency with both (alias for auto)."""
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="both",
+        )
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        self.assertFalse(result.errors)
+        self.assertEqual(result.summary["model_used"], "doench_2014")
+        self.assertEqual(result.summary["selection_status"], "selected")
+
+    def test_python_api_ontarget_invalid_model(self):
+        """Test Python API predict_ontarget_efficiency with invalid model."""
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="invalid_model",
+        )
+        self.assertTrue(result.errors)
+
+    def test_python_api_ontarget_context_length_mismatch(self):
+        """Test Python API predict_ontarget_efficiency with wrong context length."""
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence="AAAAGGCGCGCGCGCGCGCGCGGG",  # 24 nt, not 30
+            model="auto",
+        )
+        self.assertTrue(result.errors)
+        self.assertEqual(result.summary["confidence_flag"], "context_length_mismatch")
+
+    def test_python_api_ontarget_normalize_score(self):
+        """Test Python API predict_ontarget_efficiency with normalize_score."""
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+            normalize_score=True,
+        )
+        self.assertEqual(result.summary["normalized"], True)
+
+    def test_python_api_ontarget_round_decimals(self):
+        """Test Python API predict_ontarget_efficiency with custom rounding."""
+        from api import predict_ontarget_efficiency
+
+        result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+            round_decimals=5,
+        )
+        self.assertEqual(result.summary["round_decimals"], 5)
+
+    def test_core_service_ontarget(self):
+        """Test core service predict_ontarget_efficiency with auto."""
+        from core.ontarget import predict_ontarget_efficiency
+        from schemas.canonical import ComputeOnTargetEfficiencyRequest
+
+        request = ComputeOnTargetEfficiencyRequest(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+        )
+        result = predict_ontarget_efficiency(request)
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        self.assertFalse(result.errors)
+        self.assertEqual(result.summary["model_used"], "doench_2014")
+        self.assertIn("ontarget_score_doench_2014", result.summary)
+
+    def test_cli_ontarget(self):
+        """Test CLI predict_ontarget_efficiency with auto."""
+        from cli.main import main
+
+        exit_code = main([
+            "score", "on-target",
+            "--context-sequence", self.CONTEXT_30MER,
+            "--model", "auto",
+            "--output-format", "json",
+        ])
+        self.assertEqual(exit_code, 0)
+
+    def test_http_api_ontarget(self):
+        """Test HTTP API predict_ontarget_efficiency with auto."""
+        from http_api.app import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.post("/score/ontarget", json={
+            "context_sequence": self.CONTEXT_30MER,
+            "model": "auto",
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool"], "predict_ontarget_efficiency")
+        self.assertEqual(data["summary"]["model_used"], "doench_2014")
+        self.assertIn("ontarget_score_doench_2014", data["summary"])
+
+    def test_mcp_ontarget(self):
+        """Test MCP predict_ontarget_efficiency with auto."""
+        from mcp.tools.predict_ontarget_efficiency import predict_ontarget_efficiency_tool
+
+        result = predict_ontarget_efficiency_tool(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+        )
+        self.assertEqual(result.tool, "predict_ontarget_efficiency")
+        self.assertEqual(result.summary["model_used"], "doench_2014")
+        self.assertIn("ontarget_score_doench_2014", result.summary)
+
+    def test_all_interfaces_produce_same_ontarget(self):
+        """Verify all interfaces produce equivalent on-target results with auto."""
+        from api import predict_ontarget_efficiency
+        from core.ontarget import predict_ontarget_efficiency as core_ontarget
+        from schemas.canonical import ComputeOnTargetEfficiencyRequest
+        from mcp.tools.predict_ontarget_efficiency import predict_ontarget_efficiency_tool as mcp_ontarget
+        from http_api.app import app
+        from fastapi.testclient import TestClient
+
+        # Python API
+        api_result = predict_ontarget_efficiency(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+        )
+
+        # Core service
+        core_result = core_ontarget(ComputeOnTargetEfficiencyRequest(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+        ))
+
+        # MCP
+        mcp_result = mcp_ontarget(
+            context_sequence=self.CONTEXT_30MER,
+            model="auto",
+        )
+
+        # HTTP API
+        client = TestClient(app)
+        http_response = client.post("/score/ontarget", json={
+            "context_sequence": self.CONTEXT_30MER,
+            "model": "auto",
+        })
+        http_data = http_response.json()
+
+        # All should have the same score
+        self.assertEqual(api_result.summary["ontarget_score_doench_2014"], 
+                        core_result.summary["ontarget_score_doench_2014"])
+        self.assertEqual(api_result.summary["ontarget_score_doench_2014"], 
+                        mcp_result.summary["ontarget_score_doench_2014"])
+        self.assertEqual(api_result.summary["ontarget_score_doench_2014"], 
+                        http_data["summary"]["ontarget_score_doench_2014"])
+
+        # All should have the same model_used
+        self.assertEqual(api_result.summary["model_used"], 
+                        core_result.summary["model_used"])
+        self.assertEqual(api_result.summary["model_used"], 
+                        mcp_result.summary["model_used"])
+        self.assertEqual(api_result.summary["model_used"], 
+                        http_data["summary"]["model_used"])
+
+        # All should have the same fallback chain
+        self.assertEqual(api_result.summary["fallback_chain"], 
+                        core_result.summary["fallback_chain"])
+        self.assertEqual(api_result.summary["fallback_chain"], 
+                        mcp_result.summary["fallback_chain"])
+        self.assertEqual(api_result.summary["fallback_chain"], 
+                        http_data["summary"]["fallback_chain"])
