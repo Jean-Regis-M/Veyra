@@ -53,3 +53,4 @@ refrences.local/
 backend/cache/*.db
 
 .env
+midend/.env
