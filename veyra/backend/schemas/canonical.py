@@ -65,6 +65,13 @@ class OfftargetSearchRequest:
     max_mismatches: int = 4
     allow_bulge: bool = False
     cas_variant: str = "SpCas9"
+    backend: str = "bwa"
+    max_dna_bulge: int = 0
+    max_rna_bulge: int = 0
+    search_scope: str = "genome"
+    chrom: str | None = None
+    start: int | None = None
+    end: int | None = None
 
 
 @dataclass
@@ -121,6 +128,88 @@ class ComputeGCContentRequest:
     round_decimals: int = 3
 
 
+@dataclass
+class CheckHomopolymerRunsRequest:
+    """Request for checking homopolymer runs in a DNA sequence."""
+    sequence: str
+    homopolymer_min_run: int = 4
+    polyT_strict: bool = True
+    polyG_strict: bool = False
+    check_bases: str = "ACGT"
+    return_run_positions: bool = False
+
+
+@dataclass
+class ComputeMeltingTempRequest:
+    """Request for computing melting temperature of a DNA sequence."""
+    sequence: str
+    tm_method: str = "nearest_neighbor"
+    na_conc: float = 50.0
+    mg_conc: float = 0.0
+    primer_conc: float = 250.0
+    seed_region_length: int = 10
+    compute_seed_tm: bool = False
+    round_decimals: int = 2
+
+
+@dataclass
+class ComputeSecondaryStructureRequest:
+    """Request for computing secondary structure / MFE of a DNA sequence."""
+    sequence: str
+    mfe_include_scaffold: bool = False
+    scaffold_sequence: str = ""
+    temperature_celsius: float = 37.0
+    return_structure_string: bool = False
+    mfe_threshold: float = -5.0
+
+
+@dataclass
+class ComputePositionalFeaturesRequest:
+    """Request for computing positional nucleotide features of a spacer sequence."""
+    sequence: str
+    spacer_length: int = 20
+    return_onehot: bool = True
+    check_position20_bias: bool = True
+    custom_check_positions: list[int] = field(default_factory=list)
+    onehot_alphabet: str = "ACGT"
+
+
+@dataclass
+class ComputeDinucleotideCompositionRequest:
+    """Request for computing dinucleotide composition of a spacer sequence."""
+    sequence: str
+    spacer_length: int = 20
+    window_size: int = 2
+    return_full_matrix: bool = False
+    normalize_counts: bool = False
+    target_dinucleotides: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ComputeSeedGCRequest:
+    """Request for computing PAM-proximal seed GC content."""
+    sequence: str
+    seed_region_length: int = 10
+    seed_anchor: str = "pam_proximal"
+    seed_min_threshold: float = 0.20
+    seed_max_threshold: float = 0.80
+    compute_seed_distal_delta: bool = False
+    round_decimals: int = 3
+
+
+@dataclass
+class ComputeCutSiteRequest:
+    """Request for computing canonical SpCas9 cleavage-site position."""
+    spacer_start: int
+    spacer_length: int = 20
+    strand: str = "+"
+    pam_position: str = "3prime"
+    cut_offset_from_pam: int = -3
+    return_genomic_coord: bool = True
+    return_relative_coord: bool = True
+    chrom: str = ""
+
+
 # ============================================================================
 # Result schemas
 # ============================================================================
@@ -139,6 +228,12 @@ class ResultRow:
     mismatch_positions: str | None = None
     cfd_score: float | None = None
     rs2_score: float | None = None
+    bulge_type: str | None = None
+    bulge_size: int | None = None
+    bulge_position: int | None = None
+    aligned_guide: str | None = None
+    aligned_candidate: str | None = None
+    cfd_status: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
