@@ -1,0 +1,1 @@
+"""VEYRA CLI package."""

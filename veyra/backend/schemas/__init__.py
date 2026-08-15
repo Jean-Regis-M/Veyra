@@ -10,6 +10,25 @@ from schemas.genomic_record import (
     VEYRAFormat,
 )
 
+from schemas.canonical import (
+    IngestRequest,
+    PamScanRequest,
+    PamScanRegionRequest,
+    BuildIndexRequest,
+    OfftargetSearchRequest,
+    ScoreOfftargetsRequest,
+    RankCandidatesRequest,
+    GenomeListRequest,
+    GenomeInfoRequest,
+    CacheStatusRequest,
+    CacheClearRequest,
+    ResultRow,
+    VeyraResult,
+    VeyraError,
+    GenomeInfo,
+    CacheStatus,
+)
+
 __all__ = [
     "GenomicRecord",
     "GenomicFeature",
@@ -20,4 +39,20 @@ __all__ = [
     "Provenance",
     "ValidationResult",
     "VEYRAFormat",
+    "IngestRequest",
+    "PamScanRequest",
+    "PamScanRegionRequest",
+    "BuildIndexRequest",
+    "OfftargetSearchRequest",
+    "ScoreOfftargetsRequest",
+    "RankCandidatesRequest",
+    "GenomeListRequest",
+    "GenomeInfoRequest",
+    "CacheStatusRequest",
+    "CacheClearRequest",
+    "ResultRow",
+    "VeyraResult",
+    "VeyraError",
+    "GenomeInfo",
+    "CacheStatus",
 ]
