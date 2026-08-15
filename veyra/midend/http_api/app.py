@@ -103,6 +103,7 @@ class SkillExecutionBody(BaseModel):
     strand: str = "both"
     depth: str = "quick"
     model: str = "auto"
+    model_id: str | None = None
     max_candidates: int = Field(default=100, ge=1, le=1000)
     max_mismatches: int = Field(default=4, ge=0, le=10)
     max_results: int = Field(default=1000, ge=1, le=100000)
@@ -386,7 +387,8 @@ async def execute_midend_skill(skill_id: str, request: SkillExecutionBody) -> di
             raise SkillError("invalid_connector", "connector must be 'http' or 'mcp'.", "connector")
         execution = control_plane.create_skill_execution(skill_id, payload)
     except SkillError as exc:
-        raise HTTPException(status_code=422, detail=exc.to_dict()) from None
+        status_code = 404 if exc.code == "unknown_skill" else 422
+        raise HTTPException(status_code=status_code, detail=exc.to_dict()) from None
     except MIDENDInputError as exc:
         return _input_error(exc)
     return {"execution_id": execution.execution_id, "skill": skill_id, "status": "started"}

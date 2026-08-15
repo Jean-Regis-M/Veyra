@@ -3,17 +3,19 @@
 Status: Verified against implementation
 Source of truth: `veyra/backend/api/__init__.py`, `veyra/backend/core/*.py`, `veyra/backend/schemas/canonical.py`, `veyra/backend/mcp/server.py`, `veyra/backend/http_api/app.py`, `veyra/backend/cli/main.py`
 
-## MIDEND upload validation
+## MIDEND upload validation and input model
 
-The public MIDEND accepts validated multipart uploads at `POST /inputs/file`.
-The implemented backend ingestion formats are FASTA (`.fa`, `.fasta`, `.fna`,
+The public MIDEND accepts validated multipart uploads at `POST /inputs/file` (for analysis and calibration inputs) and `POST /calibration/file` (for calibration datasets).
+The implemented backend analysis ingestion formats are FASTA (`.fa`, `.fasta`, `.fna`,
 `.faa`, `.fns`, `.frn`), FASTQ (`.fq`, `.fastq`, `.fqr`), and GenBank (`.gb`,
-`.gbk`, `.gbff`, `.genbank`). GFF/GFF3 and plain DNA text files are not file
+`.gbk`, `.gbff`, `.genbank`). The implemented calibration formats are CSV (`.csv`)
+and TSV (`.tsv`, `.tab`). GFF/GFF3 and plain DNA text files are not file
 inputs until a corresponding backend parser exists. MIDEND validates extension,
-content/MIME consistency, UTF-8 structure, records, nucleotide characters, a
-50 MiB size limit, and filename safety before storing an input ID. Invalid
-inputs return structured validation errors and cannot reach AI or backend
-execution. See `midend/doc/input_validation.md`.
+content/MIME consistency, UTF-8 structure, records / tabular columns and headers,
+a 50 MiB size limit, and filename safety before storing an input ID. Calibration is
+strictly optional and normal analysis workflows never require calibration data.
+Invalid inputs return structured validation errors and cannot reach AI or backend
+execution. See `midend/doc/input_validation.md` and `midend/integration.md`.
 
 ---
 

@@ -210,6 +210,25 @@ class OfftargetToxicityRiskSkill(Skill):
 
     @staticmethod
     def _coefficient_model(request: dict[str, Any], control_plane: Any = None) -> CoefficientModel:
+        supplied = request.get("coefficients")
+        if supplied is not None:
+            required = ("alpha", "beta", "gamma")
+            if any(key not in supplied for key in required):
+                raise SkillError("invalid_coefficients", "coefficients must contain alpha, beta, and gamma.", "coefficients")
+            try:
+                return CoefficientModel(
+                    model_id="user_supplied", alpha=float(supplied["alpha"]), beta=float(supplied["beta"]),
+                    gamma=float(supplied["gamma"]), epsilon=float(supplied.get("epsilon", EPSILON_DEFAULT)),
+                    feature_definition_version=FEATURE_DEFINITION_VERSION,
+                    calibration_status="user_supplied", fitting_method="user supplied",
+                )
+            except (TypeError, ValueError, RiskModelError) as exc:
+                raise SkillError("invalid_coefficients", str(exc), "coefficients") from None
+
+        model_id = request.get("coefficient_model_id")
+        if model_id and model_id in COEFFICIENT_REGISTRY:
+            return COEFFICIENT_REGISTRY[model_id]
+
         calib_id = (
             request.get("calibration_input_id")
             or request.get("calibration_input")
@@ -220,22 +239,8 @@ class OfftargetToxicityRiskSkill(Skill):
             if model_key in COEFFICIENT_REGISTRY:
                 return COEFFICIENT_REGISTRY[model_key]
 
-        supplied = request.get("coefficients")
-        if supplied is None:
-            model_id = request.get("coefficient_model_id", "offtarget_toxicity_prototype")
-            return COEFFICIENT_REGISTRY.get(model_id, COEFFICIENT_REGISTRY["offtarget_toxicity_prototype"])
-        required = ("alpha", "beta", "gamma")
-        if any(key not in supplied for key in required):
-            raise SkillError("invalid_coefficients", "coefficients must contain alpha, beta, and gamma.", "coefficients")
-        try:
-            return CoefficientModel(
-                model_id="user_supplied", alpha=float(supplied["alpha"]), beta=float(supplied["beta"]),
-                gamma=float(supplied["gamma"]), epsilon=float(supplied.get("epsilon", EPSILON_DEFAULT)),
-                feature_definition_version=FEATURE_DEFINITION_VERSION,
-                calibration_status="user_supplied", fitting_method="user supplied",
-            )
-        except (TypeError, ValueError, RiskModelError) as exc:
-            raise SkillError("invalid_coefficients", str(exc), "coefficients") from None
+        return COEFFICIENT_REGISTRY.get(model_id or "offtarget_toxicity_prototype",
+                                        COEFFICIENT_REGISTRY["offtarget_toxicity_prototype"])
 
     @staticmethod
     def _feature_record(value: Any, status: str, source: str | None) -> dict[str, Any]:
