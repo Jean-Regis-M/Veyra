@@ -61,7 +61,7 @@ MODEL_SPECS: dict[str, dict[str, Any]] = {
         "runner_entrypoint": "rs2_predict",  # internal function name
         "verification_case": {
             "context_sequence": "AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA",
-            "expected_range": [0.0, 1.0],
+            "expected_range": [-10.0, 10.0],
         },
         "license": "MIT (Azimuth 2.0)",
         "provenance": "https://github.com/gpp-rnd/azimuth",

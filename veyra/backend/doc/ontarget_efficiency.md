@@ -12,7 +12,7 @@ VEYRA implements a **model registry** with automatic fallback and **transparent 
 
 | Model ID | Display Name | Priority (Auto) | Status |
 |----------|--------------|-----------------|--------|
-| `rule_set_3` | Rule Set 3 (Doench 2021) | 1 (highest) | INCOMPATIBLE (lightgbm/rs3) |
+| `rule_set_3` | Rule Set 3 (Doench 2021) | 1 (highest) | **VERIFIED** (rs3 + LightGBM compatibility shim) |
 | `rule_set_2` | Rule Set 2 (Doench 2016 / Azimuth / Fusi) | 2 | INCOMPATIBLE (sklearn version) |
 | `doench_2014` | Doench 2014 (Rule Set 1) | 3 (fallback) | **VERIFIED** |
 
@@ -30,6 +30,10 @@ VEYRA implements a **model registry** with automatic fallback and **transparent 
 **Auto Priority Order**: `rule_set_3` > `rule_set_2` > `doench_2014`  
 (Only among verified models)
 
+Rule Set 3 returns its native activity score, which is not bounded to 0–1;
+VEYRA does not apply an unvalidated probability normalization. Doench 2014
+remains on a 0–1 scale.
+
 ### Fallback Transparency
 
 When `model="auto"` falls back, the response includes:
@@ -37,11 +41,11 @@ When `model="auto"` falls back, the response includes:
 ```json
 {
   "requested_model": "auto",
-  "model_used": "doench_2014",
+  "model_used": "rule_set_3",
   "selection_status": "selected",
   "fallback_used": false,
   "fallback_chain": [
-    {"model": "rule_set_3", "status": "incompatible", "reason": "lightgbm error"},
+    {"model": "rule_set_3", "status": "verified", "reason": "selected"},
     {"model": "rule_set_2", "status": "incompatible", "reason": "sklearn version conflict"},
     {"model": "doench_2014", "status": "verified", "reason": "selected"}
   ]
@@ -55,8 +59,9 @@ When `model="auto"` falls back, the response includes:
 ### Rule Set 3 (Doench 2021)
 - **Source**: Doench et al., Nature Biotechnology 2021
 - **Implementation**: LightGBM gradient boosting (via rs3 package)
-- **Status**: **INCOMPATIBLE** — rs3 package has lightgbm version conflict
-- **Error**: `'>' not supported between instances of 'NoneType' and 'int'`
+- **Status**: **VERIFIED** — rs3 0.0.15 runs with a compatibility shim for
+  LightGBM's missing regressor `_n_classes` attribute
+- **Scale**: native RS3 activity score; not bounded to 0–1
 
 ### Rule Set 2 (Doench 2016 / Azimuth / Fusi)
 - **Source**: Doench et al., Nature Biotechnology 2016 (PMID: 26825659)

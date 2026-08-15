@@ -29,6 +29,11 @@ _CAS_OFFINDER_BIN = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
     "data", "tools", "cas-offinder", "build", "cas-offinder"
 )
+_POCL_CACHE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "cache", "pocl",
+)
+os.makedirs(_POCL_CACHE_DIR, exist_ok=True)
 
 
 def _get_pam_length(pam_pattern: str) -> int:
@@ -61,6 +66,8 @@ def cas_offinder_search(
     start: int | None = None,
     end: int | None = None,
     cas_variant: str = "SpCas9",
+    strand_search: str = "both",
+    max_results: int = 1000,
 ) -> ToolResult:
     """Search a genome for off-target matches using Cas-OFFinder.
 
@@ -85,11 +92,22 @@ def cas_offinder_search(
     errors: list[str] = []
     warnings: list[str] = []
 
+    if strand_search not in ("both", "fwd", "rev"):
+        return ToolResult(tool="cas_offinder_search", errors=[
+            f"strand_search must be 'both', 'fwd', or 'rev', got '{strand_search}'"
+        ])
+    if max_results < 1:
+        return ToolResult(tool="cas_offinder_search", errors=[
+            f"max_results must be >= 1, got {max_results}"
+        ])
+
     # Check Cas-OFFinder executable
     if not os.path.isfile(_CAS_OFFINDER_BIN):
         return ToolResult(
             tool="cas_offinder_search",
             errors=[f"Cas-OFFinder executable not found at {_CAS_OFFINDER_BIN}. Build from source first."],
+            summary={"backend": "cas_offinder", "search_scope": search_scope},
+            metadata={"cas_offinder_version": "3.0.0", "executable": _CAS_OFFINDER_BIN},
         )
 
     # Validate inputs
@@ -179,11 +197,17 @@ def cas_offinder_search(
 
         # Run Cas-OFFinder
         try:
+            # Keep POCL's compiled-kernel cache inside VEYRA. A stale or
+            # unwritable user cache can otherwise make OpenCL compilation
+            # fail before Cas-OFFinder starts searching.
+            engine_env = os.environ.copy()
+            engine_env.setdefault("POCL_CACHE_DIR", _POCL_CACHE_DIR)
             result = subprocess.run(
                 [_CAS_OFFINDER_BIN, input_file, "C", output_file],
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env=engine_env,
             )
         except FileNotFoundError:
             return ToolResult(
@@ -201,6 +225,8 @@ def cas_offinder_search(
             return ToolResult(
                 tool="cas_offinder_search",
                 errors=[f"Cas-OFFinder failed: {stderr}"],
+                summary={"backend": "cas_offinder", "search_scope": search_scope, "coordinates": "1-based"},
+                metadata={"cas_offinder_version": "3.0.0", "cas_offinder_source": "https://github.com/snugel/cas-offinder", "execution_device": "cpu", "executable": _CAS_OFFINDER_BIN},
             )
 
         # Parse output
@@ -284,6 +310,10 @@ def cas_offinder_search(
             if r.chrom == chrom and r.start is not None and r.start >= start and r.start < end:
                 filtered.append(r)
         rows = filtered
+    if strand_search == "fwd":
+        rows = [r for r in rows if r.strand in ("+", "F")]
+    elif strand_search == "rev":
+        rows = [r for r in rows if r.strand in ("-", "R")]
     bulge_order = {"X": 0, "DNA": 1, "RNA": 2}
     rows.sort(key=lambda r: (
         bulge_order.get(r.bulge_type or "X", 3),
@@ -291,6 +321,10 @@ def cas_offinder_search(
         r.chrom or "",
         r.start or 0,
     ))
+
+    results_truncated = len(rows) > max_results
+    if results_truncated:
+        rows = rows[:max_results]
 
     # Compute summary
     bulge_distribution = {}
@@ -312,6 +346,9 @@ def cas_offinder_search(
         "backend": "cas_offinder",
         "execution_device": "cpu",
         "opencl_runtime": "pocl",
+        "strand_search": strand_search,
+        "max_results": max_results,
+        "results_truncated": results_truncated,
     }
 
     if search_scope == "region":
@@ -331,6 +368,7 @@ def cas_offinder_search(
             "license": "BSD 3-Clause",
             "execution_device": "cpu",
             "opencl_runtime": "pocl",
+            "executable": _CAS_OFFINDER_BIN,
         },
     )
 

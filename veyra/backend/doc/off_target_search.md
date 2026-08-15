@@ -97,7 +97,7 @@ Cas-OFFinder is a GPU-accelerated tool for searching CRISPR off-target sites wit
 | `backend` | "bwa" | "bwa" or "cas_offinder" |
 | `max_dna_bulge` | 0 | Maximum DNA bulge size (cas_offinder only) |
 | `max_rna_bulge` | 0 | Maximum RNA bulge size (cas_offinder only) |
-| `search_scope` | "genome" | "genome" or "region" (cas_offinder only) |
+| `search_scope` | "genome" | "genome" or "region" (both backends; BWA applies a post-search region filter) |
 | `chrom` | None | Chromosome (required for regional scope) |
 | `start` | None | Start position, 1-based (required for regional scope) |
 | `end` | None | End position, exclusive (required for regional scope) |
@@ -120,6 +120,11 @@ Both BWA and Cas-OFFinder search both strands by default. Filtering is applied p
 ### Max Results
 
 The `max_results` parameter truncates the output after the specified number of candidates. When truncation occurs, `results_truncated: true` is set in the summary. This does not change biological thresholds — it only limits the returned result set.
+
+`strand_search` and `max_results` are forwarded consistently to both BWA and
+Cas-OFFinder paths. Cas-OFFinder rows carrying DNA/RNA bulges are explicitly
+marked `cfd_status="unsupported_bulge"`; the mismatch-only CFD implementation
+does not score them.
 
 ### Device
 

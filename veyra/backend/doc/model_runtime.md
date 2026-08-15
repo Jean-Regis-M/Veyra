@@ -38,7 +38,7 @@ Each model has a trusted specification in `MODEL_SPECS` that defines:
 | Model | Python | Dependencies | Notes |
 |-------|--------|-------------|-------|
 | `rule_set_2` | 3.8 | scikit-learn==0.16.1, numpy==1.16.6, pandas==0.24.2 | Pickled AdaBoost model needs legacy sklearn |
-| `rule_set_3` | 3.8 | rs3==0.0.15, lightgbm==3.3.5, scikit-learn==1.0.2 | rs3 incompatible with lightgbm 4.x |
+| `rule_set_3` | main Python 3.12 works | rs3==0.0.15 + installed LightGBM with compatibility shim | Native RS3 score scale; isolated spec remains available |
 | `doench_2014` | any | (none) | Pure Python, no isolated runtime needed |
 
 ## Runtime State Machine
@@ -81,38 +81,31 @@ veyra models setup --all
 veyra models verify rule_set_3
 ```
 
-### Automatic Setup (Via Auto Selection)
+### Explicit Setup (Required Before Auto Eligibility)
 
-When `model="auto"` is requested and no verified model is found, the system:
-1. Checks each model in priority order (rule_set_3 > rule_set_2 > doench_2014)
-2. Attempts to provision unprovisioned models
-3. Verifies provisioned models
-4. Selects the first eligible model
-5. Reports all actions transparently
+On-target prediction does not create virtual environments or install packages
+implicitly. Use `models setup <model>` followed by `models verify <model>` (or
+the equivalent HTTP/MCP runtime-management operation) to provision a declared
+isolated runtime. This keeps prediction requests bounded, reproducible, and
+free from package-install side effects. `model="auto"` only selects models
+already marked `verified` and otherwise reports its fallback chain.
 
-### Auto-Provisioning Flow
+When `model="auto"` is requested, the system checks each model in priority
+order (`rule_set_3 > rule_set_2 > doench_2014`) and selects the first model
+already marked `verified`. It never provisions or installs packages during a
+prediction request; unavailable models and the fallback chain are reported.
+
+### Runtime Provisioning Flow
 
 ```mermaid
 graph TD
     A[model="auto"] --> B{Check registry}
     B --> C[Rule Set 3 verified?]
     C -->|Yes| D[Use Rule Set 3]
-    C -->|No| E[Attempt provision]
-    E --> F{Provision success?}
-    F -->|Yes| G[Verify]
-    G --> H{Verify pass?}
-    H -->|Yes| D
-    H -->|No| I[Rule Set 2]
-    F -->|No| I
-    I --> J{Check Rule Set 2}
-    J -->|Not verified| K[Attempt provision Rule Set 2]
-    K --> L{Provision success?}
-    L -->|Yes| M[Verify]
-    M --> N{Verify pass?}
-    N -->|Yes| O[Use Rule Set 2]
-    N -->|No| P[Doench 2014]
-    L -->|No| P
-    P --> Q[Doench 2014 always available]
+    C -->|No| E[Check Rule Set 2]
+    E -->|Verified| F[Use Rule Set 2]
+    E -->|Not verified| G[Use Doench 2014]
+    G --> H[Report fallback chain]
 ```
 
 ## Concurrency & Locking

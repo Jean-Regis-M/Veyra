@@ -95,3 +95,6 @@ backend/cache/model_runtime/
 
 .impeccable/
 .claude/
+
+veyra/cache/
+veyra/mcp/

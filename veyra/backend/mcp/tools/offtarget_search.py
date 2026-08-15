@@ -100,6 +100,20 @@ def offtarget_search(
             errors=[f"max_results must be >= 1, got {max_results}"],
         )
 
+    if search_scope not in ("genome", "region"):
+        return ToolResult(tool="offtarget_search", errors=[
+            f"search_scope must be 'genome' or 'region', got '{search_scope}'"
+        ])
+    if search_scope == "region":
+        if not chrom or start is None or end is None:
+            return ToolResult(tool="offtarget_search", errors=[
+                "chrom, start, and end are required when search_scope='region'"
+            ])
+        if start < 1 or end <= start:
+            return ToolResult(tool="offtarget_search", errors=[
+                f"invalid region coordinates: {chrom}:{start}-{end}"
+            ])
+
     # --- allow_bulge + backend=bwa → structured error ---
     if allow_bulge and backend == "bwa":
         return ToolResult(
@@ -123,6 +137,8 @@ def offtarget_search(
             start=start,
             end=end,
             cas_variant=cas_variant,
+            strand_search=strand_search,
+            max_results=max_results,
         )
 
     # BWA backend (mismatch-only)
@@ -250,6 +266,11 @@ def offtarget_search(
             pam_seq = _extract_pam_from_genome(
                 genome.fasta_path, chrom, pos, ref_len, strand, pam_pattern
             )
+            if pam_seq is None or not _pam_matches(pam_seq, pam_pattern):
+                # BWA aligns the spacer but has no PAM awareness. A hit is
+                # only a CRISPR candidate when the adjacent reference PAM
+                # satisfies the requested IUPAC pattern.
+                continue
 
             # Find mismatch positions
             mismatch_pos = _find_mismatch_positions(seq, read_seq, strand)
@@ -283,6 +304,9 @@ def offtarget_search(
     elif strand_search == "rev":
         rows = [r for r in rows if r.strand == "-"]
 
+    if search_scope == "region":
+        rows = [r for r in rows if r.chrom == chrom and r.start is not None and start <= r.start < end]
+
     # Truncate to max_results
     results_truncated = len(rows) > max_results
     if results_truncated:
@@ -301,6 +325,8 @@ def offtarget_search(
         "results_truncated": results_truncated,
         "execution_device": "cpu",
         "search_scope": search_scope,
+        "strand_search": strand_search,
+        "max_results": max_results,
     }
 
     # Mismatch distribution
@@ -314,6 +340,11 @@ def offtarget_search(
         summary=summary,
         errors=errors,
         warnings=warnings,
+        metadata={
+            "backend": "bwa-aln",
+            "provenance": "BWA aln/samse against the registered FASTA reference",
+            "coordinates": "1-based start, end-exclusive",
+        },
     )
 
 
@@ -336,11 +367,11 @@ def _extract_pam_from_genome(
         if strand == "+":
             # PAM is 3' of protospacer for 3prime PAMs
             pam_start = pos + ref_len
-            pam_end = pam_start + 3
+            pam_end = pam_start + len(pam_pattern) - 1
         else:
             # PAM is 5' of protospacer on reverse strand
-            pam_start = pos - 3
-            pam_end = pos
+            pam_start = pos - len(pam_pattern)
+            pam_end = pos - 1
 
         if pam_start < 1:
             return None
@@ -354,14 +385,30 @@ def _extract_pam_from_genome(
             seq = "".join(l for l in lines if not l.startswith(">")).upper()
             if strand == "-":
                 seq = _complement(seq)
-            return seq if len(seq) == 3 else None
+            return seq if len(seq) == len(pam_pattern) else None
     except Exception:
         pass
     return None
 
 
+def _pam_matches(sequence: str, pattern: str) -> bool:
+    """Return whether a concrete PAM satisfies an IUPAC pattern."""
+    iupac = {
+        "A": set("A"), "C": set("C"), "G": set("G"), "T": set("T"),
+        "R": set("AG"), "Y": set("CT"), "S": set("GC"), "W": set("AT"),
+        "K": set("GT"), "M": set("AC"), "B": set("CGT"), "D": set("AGT"),
+        "H": set("ACT"), "V": set("ACG"), "N": set("ACGT"),
+    }
+    return len(sequence) == len(pattern) and all(
+        base in iupac.get(code, set())
+        for base, code in zip(sequence.upper(), pattern.upper())
+    )
+
+
 def _find_mismatch_positions(ref: str, query: str, strand: str) -> list[int]:
-    """Find 0-based positions where ref and query differ."""
+    """Find 0-based guide-oriented positions where ref and query differ."""
+    if strand == "-":
+        query = _complement(query)
     positions = []
     min_len = min(len(ref), len(query))
     for i in range(min_len):
