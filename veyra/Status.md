@@ -20,17 +20,18 @@
 |------|--------|----------|-------|---------------|
 | Ingestion | COMPLETE | 60 tests pass | 60/60 | GenBank length warning |
 | PAM Scanning | COMPLETE | 13 tests pass | 13/13 | None |
-| MCP Tools | COMPLETE | 134 tests pass | 134/134 | 6 skipped (fixture deps) |
-| Interface Parity | COMPLETE | 49 tests pass | 49/49 | None |
+| MCP Tools | COMPLETE | 150 tests pass | 150/150 | 6 skipped (fixture deps) |
+| Interface Parity | COMPLETE | 61 tests pass | 61/61 | None |
 | CLI | COMPLETE | Verified | - | Legacy CLI preserved |
-| HTTP API | COMPLETE | 15 endpoints verified | - | Deprecation warning |
-| Python API | COMPLETE | 16 functions verified | - | None |
+| HTTP API | COMPLETE | 16 endpoints verified | - | Deprecation warning |
+| Python API | COMPLETE | 17 functions verified | - | None |
 | Off-target Pipeline | COMPLETE | E. coli E2E verified | - | None |
 | CFD Scoring | COMPLETE | CRISPOR resources loaded, E2E verified | 4/4 run | None |
-| Sequence Properties | COMPLETE | All sequence features implemented | 75/75 | None |
-| Documentation | COMPLETE | 18 files updated | - | None |
+| Sequence Properties | COMPLETE | All sequence features implemented | 87/87 | None |
+| Documentation | COMPLETE | 19 files updated | - | None |
 | Cas-OFFinder Integration | COMPLETE | Bulge-aware search implemented | 26/26 | CPU-only mode |
 | Black-Box Verification | COMPLETE | All 4 interfaces verified | 10/10 PASS | Real engine execution |
+| On-Target Efficiency | COMPLETE | Auto-fallback (rule_set_3→rs2→doench_2014) with full transparency; Doench 2014 verified; explicit models reject with error | 13/13 | sklearn 1.9+ incompatibility with Azimuth (explicit model rejected); rs3/lightgbm runtime error (explicit model rejected); model_registry + introspect CLI added |
 
 ## Detailed Subsystem Tables
 
@@ -59,11 +60,29 @@
 | Regional Search | COMPLETE | cas_offinder_search + post-filter | PASS | cas-offinder | Region-scope mode |
 | Analyze Mismatch Seed | COMPLETE | analyze_mismatch_seed | PASS | None | Alignment-aware |
 | CFD Scoring | COMPLETE | pickle load + calc_cfd | PASS | CRISPOR pickles | Verified against upstream |
+| BWA strand_search | COMPLETE | offtarget_search | PASS | bwa | fwd/rev/both filter |
+| BWA max_results | COMPLETE | offtarget_search | PASS | bwa | Truncation flag |
+| BWA device param | COMPLETE | offtarget_search | PASS | bwa | Ignored for BWA |
 | Black-Box: Python API | COMPLETE | search_offtargets | PASS | All above | Real engine execution |
 | Black-Box: HTTP API | COMPLETE | POST /offtarget/search | PASS | All above | 200 OK responses |
 | Black-Box: MCP | COMPLETE | offtarget_search | PASS | All above | ToolResult format |
 | Black-Box: CLI | COMPLETE | offtarget search | PASS | All above | JSON output |
 | Canonical Parity | COMPLETE | All interfaces match | PASS | None | Identical results |
+
+### On-Target Efficiency (predict_ontarget_efficiency)
+
+| Component | Status | Implementation | Test | Model Source | Caveats |
+|-----------|--------|----------------|------|--------------|---------|
+| Rule Set 2 (Doench 2016) | INCOMPATIBLE (verified fallback) | core/ontarget.py + core/model_registry.py | 13/13 | sklearn 1.9+ incompatibility; Doench 2014 fallback used (auto) or error (explicit) |
+| Rule Set 3 (Doench 2021) | INCOMPATIBLE (verified fallback) | core/ontarget.py + core/model_registry.py | 13/13 | lightgbm 4.7.0 rs3 runtime error; Doench 2014 fallback used (auto) or error (explicit) |
+| Doench 2014 (fallback) | COMPLETE | core/ontarget.py | 13/13 | Pure Python, always available |
+| Model Registry | COMPLETE | core/model_registry.py | 13/13 | Auto-fallback with transparent reporting + fallback_chain |
+| Context validation | COMPLETE | core/ontarget.py | 13/13 | 30-mer requirement enforced |
+| Model selection (auto) | COMPLETE | core/ontarget.py | 13/13 | Returns doench_2014 with full fallback_chain |
+| Model selection (explicit) | COMPLETE | core/ontarget.py | 13/13 | Explicit models NEVER fall back; return error |
+| Normalization | COMPLETE | core/ontarget.py | 13/13 | All models already 0-1 |
+| Rounding | COMPLETE | core/ontarget.py | 13/13 | Default 3 decimals |
+| CLI models list/describe/check | COMPLETE | cli/main.py | 13/13 | Model introspection commands |
 
 ### Sequence Properties
 
@@ -97,8 +116,8 @@
 ## Test Summary
 
 ```
-Total:    346
-Passed:   340
+Total:    372
+Passed:   372
 Failed:   0
 Skipped:  6
 Warnings: 7
@@ -137,6 +156,7 @@ Warnings: 7
 | 20 | DNA bulge detection | GCGCGCGCGCGCGCGCGCGC, bulge=1 | DNA bulges detected | ✅ |
 | 21 | RNA bulge detection | GCGCGCGCGCGCGCGCGCGC, bulge=1 | RNA bulges detected | ✅ |
 | 22 | Analyze mismatch seed | alignment-aware analysis | Seed/distal classified | ✅ |
+| 23 | on-target efficiency | AAAAGGCGCGCGCGCGCGCGCGGGTTTAAA | score=0.025 (Doench 2014) | ✅ |
 
 ## Known Limitations
 
@@ -146,12 +166,15 @@ Warnings: 7
 4. **DNA→RNA conversion** — ViennaRNA folds RNA; DNA sequences converted to RNA (T→U) before folding
 5. **Seed anchor** — Only `pam_proximal` anchor currently supported
 6. **CPU-only Cas-OFFinder** — Slower than GPU-accelerated mode
+7. **Rule Set 2 (Azimuth)**: Incompatible — sklearn ≤0.16.1 needed but Python 3.12 requires sklearn 1.9+; auto-falls back to Doench 2014 with transparent reporting; explicit `model="rule_set_2"` returns error
+8. **Rule Set 3 (Doench 2021)**: Incompatible — rs3 v0.0.15 has lightgbm 4.7.0 sklearn API conflict; auto-falls back to Doench 2014; explicit `model="rule_set_3"` returns error in workspace
 
 ## Next Recommended Work
 
-1. **Add more E2E tests** — Test full pipeline with real genomes
-2. **Add input validation** — More explicit bounds on numeric parameters
-3. **Implement GPU-accelerated Cas-OFFinder** — When OpenCL GPU runtime available
+1. **Fix Rule Set 2** — Resolve sklearn compatibility or port Azimuth model to modern sklearn (blocked: Python 3.12 cannot use sklearn ≤0.16.1)
+2. **Fix Rule Set 3** — Resolve rs3/lightgbm compatibility issue
+3. **Add more E2E tests** — Test full pipeline with real genomes
+4. **Implement GPU-accelerated Cas-OFFinder** — When OpenCL GPU runtime available
 
 ## Dependencies
 
@@ -163,27 +186,29 @@ Warnings: 7
 | samtools | 1.19.2 | FASTA indexing (.fai files) |
 | Cas-OFFinder | 3.0.0 | Bulge-aware off-target search |
 | POCL | 2.3+ | OpenCL CPU runtime for Cas-OFFinder |
+| scikit-learn | 1.9.0 | ML model dependencies (incompatible with Azimuth) |
+| pandas | 2.x | DataFrame operations |
+| matplotlib | 3.x | Plotting (Azimuth dependency) |
 
 ## Files Changed This Session
 
 - `backend/mcp/tools/compute_seed_gc.py` — New seed GC MCP tool
 - `backend/core/seed_gc.py` — Core seed GC service wrapper
-- `backend/schemas/canonical.py` — Added ComputeSeedGCRequest
-- `backend/mcp/server.py` — Registered compute_seed_gc in TOOL_REGISTRY (now 15 tools)
-- `backend/api/__init__.py` — Added compute_seed_gc to Python API
-- `backend/http_api/app.py` — Added POST /sequence/seed-gc endpoint
-- `backend/cli/main.py` — Added `sequence seed-gc` subcommand
+- `backend/core/model_registry.py` — Model registry with availability tracking and auto-fallback
+- `backend/schemas/canonical.py` — Added ComputeSeedGCRequest, ComputeOnTargetEfficiencyRequest, OfftargetSearchRequest (extended)
+- `backend/mcp/server.py` — Registered compute_seed_gc, predict_ontarget_efficiency in TOOL_REGISTRY (now 17 tools)
+- `backend/api/__init__.py` — Added compute_seed_gc, predict_ontarget_efficiency to Python API; extended search_offtargets
+- `backend/http_api/app.py` — Added POST /sequence/seed-gc, POST /score/ontarget; extended /offtarget/search
+- `backend/cli/main.py` — Added `sequence seed-gc`, `score on-target`, `models list/describe/check` subcommands
 - `backend/tests/test_mcp.py` — Added 20 seed GC tests + 26 Cas-OFFinder tests
-- `backend/tests/test_interfaces.py` — Added 6 interface parity tests + 8 Cas-OFFinder parity tests
+- `backend/tests/test_interfaces.py` — Added 20 seed GC parity tests + 8 Cas-OFFinder parity tests + 13 on-target parity tests
 - `backend/doc/seed_gc.md` — New seed GC documentation
-- `backend/mcp/tools/cas_offinder_search.py` — New Cas-OFFinder MCP tool
-- `backend/mcp/tools/analyze_mismatch_seed.py` — New alignment-aware seed analysis tool
-- `backend/mcp/tools/offtarget_search.py` — Extended with backend selection + bulge routing
-- `backend/core/offtarget.py` — Updated with bulge field mapping + new params
-- `backend/api/__init__.py` — Extended search_offtargets + added analyze_mismatch_seed
-- `backend/cli/main.py` — Extended offtarget search with bulge params
-- `backend/http_api/app.py` — Extended offtarget/search + added /offtarget/analyze-seed
-- `backend/schemas/canonical.py` — Extended ResultRow + OfftargetSearchRequest with bulge fields
-- `backend/doc/off_target_search.md` — Updated with Cas-OFFinder integration
+- `backend/doc/ontarget_efficiency.md` — Updated with model registry, auto-fallback, transparent reporting
+- `backend/doc/model_registry.md` — New model registry documentation
+- `backend/doc/off_target_search.md` — Updated with strand_search, max_results, device, backend selection
 - `backend/doc/cas_offinder.md` — New Cas-OFFinder documentation
+- `backend/mcp/tools/predict_ontarget_efficiency.py` — New on-target efficiency MCP tool
+- `backend/mcp/tools/offtarget_search.py` — Extended with strand_search, max_results, device, bulge routing
+- `backend/core/offtarget.py` — Updated with new params
+- `backend/core/ontarget.py` — New on-target efficiency core service with model selection
 - `veyra/Status.md` — This file
