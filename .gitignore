@@ -97,5 +97,4 @@ backend/cache/model_runtime/
 .claude/
 
 veyra/cache/
-veyra/mcp/
 veyra/backend/cache/model_runtime/
