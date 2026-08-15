@@ -2,7 +2,10 @@
 
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator, Optional
-from ai.models import AIMessage, AIResponse, StreamChunk
+try:
+    from .models import AIMessage, AIResponse, StreamChunk
+except ImportError:  # pragma: no cover
+    from ai.models import AIMessage, AIResponse, StreamChunk
 
 
 class AIProvider(ABC):

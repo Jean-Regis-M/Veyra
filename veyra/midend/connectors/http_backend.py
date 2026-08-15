@@ -3,10 +3,16 @@
 from __future__ import annotations
 import httpx
 from typing import Any, Optional
-from config.settings import get_settings
-from connectors.base import BackendConnector
-from connectors.errors import ToolNotFoundError, ToolExecutionError, ConnectorTimeoutError, ConnectorError
-from connectors.models import BackendToolSchema, ToolExecutionResult
+try:
+    from ..config.settings import get_settings
+    from .base import BackendConnector
+    from .errors import ToolNotFoundError, ToolExecutionError, ConnectorTimeoutError, ConnectorError
+    from .models import BackendToolSchema, ToolExecutionResult
+except ImportError:  # pragma: no cover
+    from config.settings import get_settings
+    from connectors.base import BackendConnector
+    from connectors.errors import ToolNotFoundError, ToolExecutionError, ConnectorTimeoutError, ConnectorError
+    from connectors.models import BackendToolSchema, ToolExecutionResult
 
 TOOL_ENDPOINT_MAP = {
     "ingest": ("POST", "/ingest"),

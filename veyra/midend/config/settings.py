@@ -2,7 +2,23 @@
 
 import os
 from pydantic import Field
-from pydantic_settings import BaseSettings
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:  # Keep the midend usable in minimal installations.
+    from pydantic import BaseModel
+
+    class BaseSettings(BaseModel):
+        def __init__(self, **values):
+            aliases = {
+                field_name: (field.validation_alias or field_name)
+                for field_name, field in self.__class__.model_fields.items()
+            }
+            for field_name, alias in aliases.items():
+                if field_name not in values and alias in os.environ:
+                    # Pydantic v2 fields with validation_alias accept the alias
+                    # unless populate_by_name is explicitly enabled.
+                    values[alias] = os.environ[alias]
+            super().__init__(**values)
 
 
 class Settings(BaseSettings):

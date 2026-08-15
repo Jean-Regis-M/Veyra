@@ -5,6 +5,18 @@ class AIProviderError(Exception):
     pass
 
 
+class AIProviderNotConfiguredError(AIProviderError):
+    """Raised only when an AI operation is requested without an API key."""
+
+    code = "ai_provider_not_configured"
+
+    def __init__(self):
+        super().__init__(
+            "AI provider is not configured. Configure it through: "
+            "midend ai configure or POST /ai/config"
+        )
+
+
 class AIAuthenticationError(AIProviderError):
     """Raised when authentication with AI provider fails (e.g. invalid API key)."""
     pass

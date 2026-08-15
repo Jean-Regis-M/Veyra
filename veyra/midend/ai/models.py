@@ -22,7 +22,9 @@ class AIResponse(BaseModel):
     content: str
     model: str
     provider: str = "openai_compatible"
-    usage: dict[str, int] = Field(default_factory=dict)
+    # OpenAI-compatible providers may add nested usage metadata and strings
+    # such as service_tier; preserve it without exposing credentials.
+    usage: dict[str, Any] = Field(default_factory=dict)
     finish_reason: Optional[str] = None
     latency_ms: float = 0.0
     request_id: Optional[str] = None

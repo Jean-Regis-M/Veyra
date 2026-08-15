@@ -1,0 +1,1 @@
+"""MIDEND command-line interface."""

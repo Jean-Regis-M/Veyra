@@ -5,10 +5,16 @@ import asyncio
 import os
 import sys
 from typing import Any, Optional
-from config.settings import get_settings
-from connectors.base import BackendConnector
-from connectors.errors import ToolNotFoundError, ToolExecutionError, ConnectorTimeoutError
-from connectors.models import BackendToolSchema, ToolExecutionResult
+try:
+    from ..config.settings import get_settings
+    from .base import BackendConnector
+    from .errors import ToolNotFoundError, ToolExecutionError, ConnectorTimeoutError
+    from .models import BackendToolSchema, ToolExecutionResult
+except ImportError:  # pragma: no cover
+    from config.settings import get_settings
+    from connectors.base import BackendConnector
+    from connectors.errors import ToolNotFoundError, ToolExecutionError, ConnectorTimeoutError
+    from connectors.models import BackendToolSchema, ToolExecutionResult
 
 # Ensure backend directory is in sys.path for direct import of VEYRA mcp.server
 _BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend"))

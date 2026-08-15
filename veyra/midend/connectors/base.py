@@ -2,7 +2,10 @@
 
 from abc import ABC, abstractmethod
 from typing import Any
-from connectors.models import BackendToolSchema, ToolExecutionResult
+try:
+    from .models import BackendToolSchema, ToolExecutionResult
+except ImportError:  # pragma: no cover
+    from connectors.models import BackendToolSchema, ToolExecutionResult
 
 
 class BackendConnector(ABC):
