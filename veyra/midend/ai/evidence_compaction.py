@@ -27,14 +27,32 @@ def compact_evidence(
             "raw_output": str(res_dict),
         }
 
+    is_failed = (
+        bool(res_dict.get("errors"))
+        or res_dict.get("status") == "failed"
+        or res_dict.get("success") is False
+    )
+
     evidence: dict[str, Any] = {
         "tool": tool_name,
         "call_id": call_id,
         "execution_id": execution_id,
-        "status": res_dict.get("status", "completed"),
+        "success": not is_failed,
+        "status": "failed" if is_failed else res_dict.get("status", "completed"),
         "warnings": res_dict.get("warnings", []),
         "errors": res_dict.get("errors", []),
     }
+
+    if is_failed:
+        err_list = evidence["errors"] or (res_dict.get("errors") or [])
+        if not err_list and res_dict.get("error"):
+            err_list = [str(res_dict["error"])]
+        evidence["errors"] = err_list
+        evidence["diagnostic"] = (
+            f"Tool '{tool_name}' failed with errors: {'; '.join(str(e) for e in err_list)}. "
+            "You may retry with corrected parameters, select an alternative tool, or explain the limitation to the user."
+        )
+        return evidence
 
     if tool_name == "spcas9_gene_cutting":
         cands = res_dict.get("candidates", [])

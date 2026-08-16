@@ -450,6 +450,21 @@ export default function ChatConsole() {
                         initialData={turn.executionStatus}
                         live={turn.isRunning}
                         defaultCollapsed={!turn.isRunning}
+                        onFinished={(updatedStatus) => {
+                          setTurns((prev) => {
+                            const next = [...prev];
+                            const tIdx = next.findIndex((t) => t.executionId === turn.executionId);
+                            if (tIdx >= 0) {
+                              next[tIdx] = {
+                                ...next[tIdx],
+                                isRunning: false,
+                                executionStatus: updatedStatus,
+                                content: next[tIdx].content || updatedStatus.assistant_output || (updatedStatus.status === "failed" ? "(Execution failed)" : "(Execution finished)"),
+                              };
+                            }
+                            return next;
+                          });
+                        }}
                       />
                     )}
 

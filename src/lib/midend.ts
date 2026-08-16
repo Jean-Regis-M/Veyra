@@ -254,7 +254,7 @@ export interface AIRequestRecord {
 
 export interface ExecutionStatus {
   execution_id: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "waiting_for_tool" | "waiting_for_model" | "completed" | "failed" | "timed_out" | "cancelled";
   started_at?: string | null;
   finished_at?: string | null;
   elapsed_ms?: number;
@@ -280,6 +280,11 @@ export interface ExecutionStatus {
   parallel_groups?: ParallelGroupRecord[];
   errors: string[];
   warnings: string[];
+}
+
+export function isTerminalStatus(status?: string | null): boolean {
+  if (!status) return false;
+  return status === "completed" || status === "failed" || status === "timed_out" || status === "cancelled";
 }
 
 export async function getExecution(executionId: string): Promise<MidendResult<ExecutionStatus>> {
@@ -329,11 +334,15 @@ export function subscribeExecutionEvents(
     "calibration_completed",
     "ai_request_started",
     "ai_generation_started",
+    "ai_waiting_for_tool",
+    "ai_waiting_for_model",
     "ai_generation_completed",
     "ai_generation_failed",
     "ai_stream_chunk",
     "execution_completed",
     "execution_failed",
+    "execution_timed_out",
+    "execution_cancelled",
     "execution_finished",
   ];
 
@@ -342,7 +351,13 @@ export function subscribeExecutionEvents(
       try {
         const parsed = JSON.parse(e.data);
         onEvent({ ...parsed, event: type });
-        if (type === "execution_finished" || type === "execution_completed" || type === "execution_failed") {
+        if (
+          type === "execution_finished" ||
+          type === "execution_completed" ||
+          type === "execution_failed" ||
+          type === "execution_timed_out" ||
+          type === "execution_cancelled"
+        ) {
           setTimeout(() => {
             eventSource?.close();
             onDone?.();
@@ -372,8 +387,12 @@ export async function pollExecution(
   for (let i = 0; i < maxAttempts; i++) {
     const result = await getExecution(executionId);
     if (!result.ok) return result;
-    if (result.data.status === "completed" || result.data.status === "failed") return result;
+    if (isTerminalStatus(result.data.status)) return result;
     await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  const lastResult = await getExecution(executionId);
+  if (lastResult.ok) {
+    return lastResult;
   }
   return { ok: false, error: "Execution still running after the poll budget — check /executions/" + executionId };
 }

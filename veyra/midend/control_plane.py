@@ -37,6 +37,7 @@ try:
     from .config.ai_provider import AIConfigError, AIProviderConfig, get_ai_config, get_ai_config_manager, validate_config
     from .config.settings import get_settings
     from .connectors import get_backend_connector
+    from .connectors.models import ToolExecutionResult
     from .input_validation import InputRegistry, MIDENDInputError
     from .skills.registry import get_skill
 except ImportError:  # pragma: no cover
@@ -55,6 +56,7 @@ except ImportError:  # pragma: no cover
     from config.ai_provider import AIConfigError, AIProviderConfig, get_ai_config, get_ai_config_manager, validate_config
     from config.settings import get_settings
     from connectors import get_backend_connector
+    from connectors.models import ToolExecutionResult
     from input_validation import InputRegistry, MIDENDInputError
     from skills.registry import get_skill
 
@@ -532,25 +534,34 @@ class ControlPlane:
 
     async def _run(self, execution: ExecutionState, payload: dict[str, Any], conversation_id: str | None) -> None:
         started = time.perf_counter()
+        timeout_sec = float(payload.get("timeout_seconds") or payload.get("timeout") or 120.0)
         execution.status, execution.started_at = "running", now_iso()
         self.providers.current_execution_id = execution.execution_id
         await self._emit(execution, "execution_started", status=execution.status)
         try:
-            calls = list(payload.get("tool_calls") or [])
-            groups = list(payload.get("parallel_groups") or [])
-            ai_request = payload.get("ai_request")
+            async with asyncio.timeout(timeout_sec):
+                calls = list(payload.get("tool_calls") or [])
+                groups = list(payload.get("parallel_groups") or [])
+                ai_request = payload.get("ai_request")
 
-            if groups:
-                for group in groups:
-                    await self._run_group(execution, group.get("group_id") or new_id("group"), group.get("calls", []))
-            elif calls:
-                for call in calls:
-                    await self._run_call(execution, call)
-            if ai_request:
-                await self._run_ai(execution, ai_request, conversation_id)
-            if execution.status != "failed":
-                execution.status = "completed"
-                await self._emit(execution, "execution_completed", assistant_output=execution.assistant_output)
+                if groups:
+                    for group in groups:
+                        await self._run_group(execution, group.get("group_id") or new_id("group"), group.get("calls", []))
+                elif calls:
+                    for call in calls:
+                        await self._run_call(execution, call)
+                if ai_request:
+                    await self._run_ai(execution, ai_request, conversation_id)
+                if execution.status not in {"failed", "timed_out", "cancelled"}:
+                    execution.status = "completed"
+                    await self._emit(execution, "execution_completed", assistant_output=execution.assistant_output)
+        except asyncio.TimeoutError:
+            execution.status = "timed_out"
+            execution.errors.append(f"execution_timed_out: operation exceeded {timeout_sec}s timeout limit")
+            await self._emit(execution, "execution_timed_out", timeout_seconds=timeout_sec, errors=execution.errors)
+        except asyncio.CancelledError:
+            execution.status = "cancelled"
+            await self._emit(execution, "execution_cancelled")
         except Exception as exc:
             execution.status = "failed"
             if not execution.errors:
@@ -558,19 +569,13 @@ class ControlPlane:
             await self._emit(execution, "execution_failed", errors=execution.errors)
         finally:
             execution.finished_at, execution.elapsed_ms = now_iso(), (time.perf_counter() - started) * 1000
+            execution.generation_active = execution.reasoning_active = False
             if self.providers.current_execution_id == execution.execution_id:
                 self.providers.current_execution_id = None
                 self.providers.current_request_id = None
                 self.providers.generation_active = False
                 self.providers.reasoning_active = False
-            await self._emit(execution, "execution_finished", elapsed_ms=execution.elapsed_ms)
-            for queue in list(execution.subscribers):
-                await queue.put(None)
-                self.providers.current_execution_id = None
-                self.providers.current_request_id = None
-                self.providers.generation_active = False
-                self.providers.reasoning_active = False
-            await self._emit(execution, "execution_finished", elapsed_ms=execution.elapsed_ms)
+            await self._emit(execution, "execution_finished", elapsed_ms=execution.elapsed_ms, status=execution.status)
             for queue in list(execution.subscribers):
                 await queue.put(None)
 
@@ -641,7 +646,7 @@ class ControlPlane:
                     emit=lambda e, **d: self._emit(execution, e, skill=state.tool, **d),
                 )
                 state.result = safe_value(skill_res)
-                state.success = skill_res.get("status") in {"complete", "prototype", "partial"}
+                state.success = skill_res.get("status") in {"complete", "prototype", "partial", "unavailable"}
                 state.status = "completed" if state.success else "failed"
                 state.errors = skill_res.get("errors", [])
                 state.warnings = skill_res.get("warnings", [])
@@ -649,20 +654,40 @@ class ControlPlane:
                 event_name = "tool_call_completed" if state.success else "tool_call_failed"
                 result = skill_res
             except Exception as exc:
-                state.status, state.errors = "failed", [safe_value(str(exc))]
+                state.status, state.success, state.errors = "failed", False, [safe_value(str(exc))]
+                result = {
+                    "tool": state.tool,
+                    "call_id": state.call_id,
+                    "execution_id": execution.execution_id,
+                    "status": "failed",
+                    "success": False,
+                    "errors": state.errors,
+                    "warnings": state.warnings,
+                }
+                state.result = result
+                execution.deterministic_evidence.append(result)
         else:
             try:
                 connector = get_backend_connector(execution.connector)
-                result = await connector.call_tool(state.tool, state.arguments)
-                state.result = safe_value(result.to_dict())
-                state.errors, state.warnings, state.metadata = result.errors, result.warnings, safe_value(result.metadata)
+                res = await connector.call_tool(state.tool, state.arguments)
+                state.result = safe_value(res.to_dict())
+                state.errors, state.warnings, state.metadata = res.errors, res.warnings, safe_value(res.metadata)
                 state.metadata["parameters_meta"] = analyze_parameters_meta(state.tool, state.arguments)
-                state.success = result.is_success
+                state.success = res.is_success
                 state.status = "completed" if state.success else "failed"
                 event_name = "tool_call_completed" if state.success else "tool_call_failed"
                 execution.deterministic_evidence.append(state.result)
+                result = res
             except Exception as exc:
-                state.status, state.errors = "failed", [safe_value(str(exc))]
+                state.status, state.success, state.errors = "failed", False, [safe_value(str(exc))]
+                result = ToolExecutionResult(
+                    tool=state.tool,
+                    errors=state.errors,
+                    warnings=state.warnings,
+                    metadata=state.metadata,
+                )
+                state.result = result.to_dict()
+                execution.deterministic_evidence.append(state.result)
         state.finished_at, state.duration_ms = now_iso(), (time.perf_counter() - started) * 1000
         await self._emit(execution, event_name, call=state.public())
         return result
@@ -815,6 +840,8 @@ class ControlPlane:
 
             while turn < max_turns:
                 turn += 1
+                await self._emit(execution, "ai_generation_started", request_id=req.request_id,
+                                 generation_active=True, reasoning_active=True, turn=turn)
                 response = await OpenAICompatibleProvider(record.config).generate(
                     messages, execution.model, tools=active_native_tools
                 )
@@ -831,6 +858,10 @@ class ControlPlane:
                         )
                     )
 
+                    await self._emit(execution, "ai_waiting_for_tool", request_id=req.request_id,
+                                     tool_calls=[tc.get("function", {}).get("name") for tc in tool_calls_list],
+                                     turn=turn)
+
                     for tc in tool_calls_list:
                         tc_id = tc.get("id") or new_id("tc")
                         func = tc.get("function") or {}
@@ -838,8 +869,8 @@ class ControlPlane:
                         raw_args = func.get("arguments") or "{}"
                         try:
                             fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                        except Exception:
-                            fn_args = {}
+                        except Exception as parse_err:
+                            fn_args = {"_malformed_arguments": raw_args, "_error": str(parse_err)}
 
                         # Dynamically expand active schemas if an unlisted tool was called
                         if fn_name and fn_name not in active_tool_names:

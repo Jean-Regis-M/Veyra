@@ -145,6 +145,18 @@ export function ExecutionActivity({
           break;
         }
 
+        case "ai_waiting_for_tool": {
+          setReasoningActive(false);
+          setGenerationActive(false);
+          break;
+        }
+
+        case "ai_waiting_for_model": {
+          setReasoningActive(true);
+          setGenerationActive(true);
+          break;
+        }
+
         case "ai_generation_started": {
           setReasoningActive(Boolean(event.reasoning_active));
           setGenerationActive(Boolean(event.generation_active));
@@ -162,10 +174,19 @@ export function ExecutionActivity({
           break;
         }
 
+        case "execution_timed_out":
+        case "execution_cancelled":
         case "execution_completed":
         case "execution_failed":
         case "execution_finished": {
           setIsFinished(true);
+          setReasoningActive(false);
+          setGenerationActive(false);
+          if (event.status) {
+            setExecState((prev) =>
+              prev ? { ...prev, status: event.status as ExecutionStatus["status"] } : null
+            );
+          }
           break;
         }
       }
