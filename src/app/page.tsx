@@ -31,6 +31,36 @@ const READOUTS = [
   { num: "0", label: "Scores not traceable to a function" },
 ];
 
+// Real, published, cited cases — not VEYRA's own results. Every claim here
+// mirrors what the source explicitly established, including where it
+// explicitly did NOT find patient harm. Never state more than the source does.
+const REAL_WORLD_CASES = [
+  {
+    sector: "Human medicine",
+    finding:
+      "In a first-in-human CRISPR-Cas9 sickle-cell study, patients' blood stem cells were edited outside the body and returned. The safety programme specifically investigates unintended genomic changes in these cells — the study did not establish that an off-target mutation harmed patients.",
+    source: "New England Journal of Medicine",
+  },
+  {
+    sector: "Cancer treatment",
+    finding:
+      "In the first-in-human CRISPR-Cas9 T-cell cancer trial, researchers detected chromosomal translocations in the manufactured cells, some persisting after infusion. The study found no evidence these translocations caused patient harm.",
+    source: "PubMed Central (PMC); Nature",
+  },
+  {
+    sector: "Livestock",
+    finding:
+      "CRISPR-edited pigs have been found with off-target mutations at other genomic locations; the animals were not shown to suffer an associated health problem. Separately, gene-edited hornless cattle were found to carry an undisclosed antibiotic-resistance marker from the editing process, surfacing only after regulatory review.",
+    source: "Documented off-target case reports",
+  },
+  {
+    sector: "India — regulatory gap",
+    finding:
+      "India has no dedicated gene-editing statute; oversight relies on advisory ICMR/DBT guidelines, not legally binding law. If an unintended genomic change occurred in an Indian trial today, there is currently no established compensation or liability pathway specific to CRISPR.",
+    source: "ICMR/DBT guidelines; ART Act",
+  },
+];
+
 const MARQUEE_ITEMS = [
   "deterministic by design",
   "full-locus context",
@@ -159,6 +189,26 @@ export default function Home() {
               <div key={f.title} className="veyra-glass p-7">
                 <h3 className="font-display text-foreground font-medium mb-2.5">{f.title}</h3>
                 <p className="text-sm text-muted leading-relaxed">{f.body}</p>
+              </div>
+            ))}
+          </div>
+        </Reveal>
+      </section>
+
+      <section id="stakes" className="py-24 px-4 sm:px-6">
+        <Reveal className="mx-auto max-w-6xl">
+          <h2 className="font-display text-2xl sm:text-3xl font-semibold text-foreground mb-3">Why off-target evidence matters</h2>
+          <p className="text-sm text-muted max-w-2xl mb-10 leading-relaxed">
+            Off-target risk isn&apos;t hypothetical — it&apos;s been documented in real published trials, and
+            India currently has no dedicated gene-editing statute to fall back on. This is cited, published
+            evidence, distinct from VEYRA&apos;s own illustrative research-prototype scores below.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {REAL_WORLD_CASES.map((c) => (
+              <div key={c.sector} className="veyra-glass p-6">
+                <p className="font-mono text-[10px] uppercase tracking-wide text-secondary mb-2">{c.sector}</p>
+                <p className="text-sm text-muted leading-relaxed">{c.finding}</p>
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-wide text-muted/70">Source: {c.source}</p>
               </div>
             ))}
           </div>
