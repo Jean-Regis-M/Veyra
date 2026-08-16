@@ -8,8 +8,10 @@
  * UI must show as "unavailable," never a fallback number of our own.
  */
 
+import { parseSequenceFile } from "./sequenceFileParser";
+
 // Browser calls route through /api/proxy/backend by default — a same-origin
-// Next.js route handler that forwards server-side to the real backend. This
+// path that next.config.ts rewrites server-side to the real backend. This
 // avoids two failure modes a direct browser fetch to an http:// host hits on
 // an https:// deployment: mixed-content blocking and cross-origin CORS.
 // Set NEXT_PUBLIC_VEYRA_BACKEND_URL to bypass the proxy (e.g. local dev
@@ -269,33 +271,17 @@ export interface IngestedRecord {
   accession: string | null;
 }
 
-/** Uploads a FASTA/FASTQ/GenBank file through the Next.js /api/ingest bridge,
- * which calls the backend's real parsers (backend has no direct multipart
- * upload endpoint — only a server-side file path). Returns every parsed
- * record verbatim; never fabricates a sequence. */
+/** Parses a FASTA/FASTQ/GenBank file entirely client-side (see
+ * sequenceFileParser.ts) — never uploaded anywhere, so there's no server
+ * payload-size limit regardless of file size. Returns every parsed record
+ * verbatim; never fabricates a sequence. */
 export async function ingestFile(file: File): Promise<BackendCallResult<IngestedRecord[]>> {
   try {
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch("/api/ingest", { method: "POST", body: form });
-    const body = await res.json();
-    if (!res.ok) {
-      return { ok: false, error: String(body?.error ?? `HTTP ${res.status}`) };
+    const result = await parseSequenceFile(file);
+    if (!result.ok) {
+      return { ok: false, error: result.error };
     }
-    const rows = (body.rows ?? []) as Record<string, unknown>[];
-    if (rows.length === 0) {
-      return { ok: false, error: "No records found in file." };
-    }
-    return {
-      ok: true,
-      data: rows.map((r) => ({
-        id: String(r.id ?? ""),
-        sequence: String(r.sequence ?? ""),
-        length: Number(r.length ?? 0),
-        description: String(r.description ?? ""),
-        accession: (r.accession as string | null) ?? null,
-      })),
-    };
+    return { ok: true, data: result.rows };
   } catch {
     return { ok: false, error: "Upload failed." };
   }
