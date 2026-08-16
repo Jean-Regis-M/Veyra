@@ -1,5 +1,5 @@
-import MidendConsole from "./MidendConsole";
+import ChatConsole from "@/app/chat/ChatConsole";
 
 export default function MidendPage() {
-  return <MidendConsole />;
+  return <ChatConsole />;
 }

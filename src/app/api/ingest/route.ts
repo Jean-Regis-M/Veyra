@@ -26,14 +26,16 @@ function parseFasta(text: string): ParsedRecord[] {
   return blocks.map((block) => {
     const [headerLine, ...rest] = block.split(/\r?\n/);
     const [id, ...descParts] = headerLine.trim().split(/\s+/);
+    const fullSeq = rest.join("").replace(/\s+/g, "").toUpperCase();
+    const truncatedSeq = fullSeq.length > 25000 ? fullSeq.slice(0, 25000) : fullSeq;
     return {
       id: id ?? "",
       description: descParts.join(" "),
       accession: null,
-      sequence: rest.join("").replace(/\s+/g, "").toUpperCase(),
-      length: 0,
+      sequence: truncatedSeq,
+      length: fullSeq.length,
     };
-  }).map((r) => ({ ...r, length: r.sequence.length })).filter((r) => r.sequence.length > 0);
+  }).filter((r) => r.sequence.length > 0);
 }
 
 function parseFastq(text: string): ParsedRecord[] {
@@ -42,8 +44,9 @@ function parseFastq(text: string): ParsedRecord[] {
   for (let i = 0; i + 1 < lines.length; i += 4) {
     if (!lines[i].startsWith("@")) continue;
     const [id, ...descParts] = lines[i].slice(1).trim().split(/\s+/);
-    const sequence = lines[i + 1].trim().toUpperCase();
-    records.push({ id, description: descParts.join(" "), accession: null, sequence, length: sequence.length });
+    const fullSeq = lines[i + 1].trim().toUpperCase();
+    const truncatedSeq = fullSeq.length > 25000 ? fullSeq.slice(0, 25000) : fullSeq;
+    records.push({ id, description: descParts.join(" "), accession: null, sequence: truncatedSeq, length: fullSeq.length });
   }
   return records;
 }
@@ -54,9 +57,10 @@ function parseGenbank(text: string): ParsedRecord[] {
   let match: RegExpExecArray | null;
   while ((match = recordPattern.exec(text)) !== null) {
     const [, id, originBlock] = match;
-    const sequence = originBlock.replace(/[^a-zA-Z]/g, "").toUpperCase();
-    if (sequence.length > 0) {
-      records.push({ id, description: "", accession: id, sequence, length: sequence.length });
+    const fullSeq = originBlock.replace(/[^a-zA-Z]/g, "").toUpperCase();
+    if (fullSeq.length > 0) {
+      const truncatedSeq = fullSeq.length > 25000 ? fullSeq.slice(0, 25000) : fullSeq;
+      records.push({ id, description: "", accession: id, sequence: truncatedSeq, length: fullSeq.length });
     }
   }
   return records;

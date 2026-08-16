@@ -108,6 +108,41 @@ export async function postConversationMessage(
   return call("POST", `/conversations/${conversationId}/messages`, { content, role });
 }
 
+export interface ValidatedInputFile {
+  input_id: string;
+  filename: string;
+  format: string;
+  detected_format: string;
+  input_class: "analysis_input" | "calibration_input" | string;
+  size_bytes: number;
+  record_count: number;
+  sequence_count: number;
+  validation_status: string;
+  backend_operation: string;
+  columns?: string[];
+  column_count?: number;
+  row_count?: number;
+  sample_count?: number;
+  calibration_status?: string;
+}
+
+/** Uploads an analysis or calibration file directly to MIDEND's real /inputs/file endpoint. */
+export async function uploadInputFile(file: File): Promise<MidendResult<ValidatedInputFile>> {
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${MIDEND_URL}/inputs/file`, { method: "POST", body: form });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const detail = json?.message ?? json?.error ?? `HTTP ${res.status}`;
+      return { ok: false, error: String(detail) };
+    }
+    return { ok: true, data: json as ValidatedInputFile };
+  } catch {
+    return { ok: false, error: "VEYRA midend service unreachable" };
+  }
+}
+
 export interface ChatStarted {
   execution_id: string;
   conversation_id: string;
@@ -116,9 +151,14 @@ export interface ChatStarted {
 
 export async function sendChatMessage(
   message: string,
-  conversationId: string
+  conversationId: string,
+  inputIds: string[] = []
 ): Promise<MidendResult<ChatStarted>> {
-  return call("POST", "/ai/chat", { message, conversation_id: conversationId });
+  return call("POST", "/ai/chat", {
+    message,
+    conversation_id: conversationId,
+    input_ids: inputIds,
+  });
 }
 
 export interface CalibrationDataset {
@@ -343,14 +383,28 @@ export async function pollExecution(
  * integration.md, so the model doesn't have to rediscover them each session.
  * Built entirely from live data (skills) plus the real published contract
  * rules — nothing here is invented. */
-export function buildSessionHandbook(skills: SkillMetadata[], toolCount: number): string {
+export function buildSessionHandbook(
+  skills: SkillMetadata[],
+  toolCount: number,
+  contextSummary?: string
+): string {
   const lines: string[] = [
-    "# VEYRA MIDEND Session Handbook",
+    "# VEYRA Session Handbook & Grounding Rules",
     "",
     "## Identity",
-    "You are the VEYRA MIDEND assistant — an AI orchestration layer over a deterministic",
-    "genomic/CRISPR analysis backend. You never perform biological calculations yourself;",
-    "you call VEYRA backend tools and skills and interpret their real, returned results.",
+    "You are VEYRA — an interpretable genomic intelligence co-pilot operating over a deterministic",
+    "CRISPR/Cas9 analysis and calibration engine. You never perform biological calculations in language tokens;",
+    "you execute VEYRA backend tools and skills, interpret the evidence, and explain it clearly.",
+    "",
+    "## Evidence Grounding & Literature Rules (MANDATORY)",
+    "- Ground biological decisions and interpretations in established literature where appropriate, and",
+    "  distinguish literature-backed claims from VEYRA-generated computational evidence.",
+    "- Prioritize:",
+    "  1. deterministic VEYRA tool results and cut-site geometry",
+    "  2. established scientific literature/reference knowledge",
+    "  3. explicit uncertainty when evidence is insufficient or partial",
+    "- Never invent citations, off-target counts, or clinical efficacy numbers.",
+    "- Missing features remain null and are never guessed or substituted.",
     "",
     "## Available skills",
   ];
@@ -376,12 +430,12 @@ export function buildSessionHandbook(skills: SkillMetadata[], toolCount: number)
     "- Always distinguish deterministic backend evidence from your own interpretation.",
     "- A skill result is a computational prediction only — never present it as",
     "  experimentally confirmed cleavage or a clinical/diagnostic fact.",
-    "- calibration_input is always optional; normal workflows never require it.",
-    "",
-    "## Output rules",
-    "- Never render hidden chain-of-thought, reasoning tokens, or provider internals.",
-    "- State uncertainty explicitly whenever evidence is partial or unavailable.",
-    "- This is a research prototype — never imply regulatory or clinical validity."
+    "- calibration_input is always optional; normal workflows never require it."
   );
+
+  if (contextSummary) {
+    lines.push("", "## Continued Analysis Context", contextSummary);
+  }
+
   return lines.join("\n");
 }

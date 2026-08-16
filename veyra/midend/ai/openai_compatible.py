@@ -23,15 +23,33 @@ class OpenAICompatibleProvider:
             raise AIProviderNotConfiguredError()
 
     async def generate(self, messages: list[AIMessage], model: Optional[str] = None,
-                       temperature: float = 0.0, max_tokens: Optional[int] = None) -> AIResponse:
+                       temperature: float = 0.0, max_tokens: Optional[int] = None,
+                       tools: Optional[list[dict[str, Any]]] = None) -> AIResponse:
         self._require_key()
         started = time.perf_counter()
-        payload = {"model": model or self.config.model, "messages": [m.model_dump() for m in messages],
-                   "temperature": temperature}
+        
+        # Serialize messages, excluding None fields
+        serialized_messages = []
+        for m in messages:
+            dumped = m.model_dump(exclude_none=True)
+            # Ensure content is never missing if tool_calls not present
+            if "content" not in dumped and "tool_calls" not in dumped:
+                dumped["content"] = ""
+            serialized_messages.append(dumped)
+
+        payload: dict[str, Any] = {
+            "model": model or self.config.model,
+            "messages": serialized_messages,
+            "temperature": temperature,
+        }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
                     f"{self.config.base_url.rstrip('/')}/chat/completions",
                     json=payload,
@@ -45,10 +63,19 @@ class OpenAICompatibleProvider:
             choice = (data.get("choices") or [{}])[0]
             message = choice.get("message") or {}
             usage = data.get("usage") or {}
-            return AIResponse(content=message.get("content", ""), model=data.get("model", payload["model"]),
-                              provider=self.provider_name, usage=usage, finish_reason=choice.get("finish_reason"),
-                              latency_ms=(time.perf_counter() - started) * 1000,
-                              request_id=data.get("id"))
+            tool_calls = message.get("tool_calls")
+            
+            return AIResponse(
+                content=message.get("content") or "",
+                model=data.get("model", payload["model"]),
+                provider=self.provider_name,
+                tool_calls=tool_calls,
+                usage=usage,
+                finish_reason=choice.get("finish_reason"),
+                latency_ms=(time.perf_counter() - started) * 1000,
+                request_id=data.get("id"),
+                raw_response=data,
+            )
         except httpx.TimeoutException as exc:
             raise AITimeoutError(60.0) from exc
         except (AIProviderError, AIAuthenticationError, AITimeoutError):

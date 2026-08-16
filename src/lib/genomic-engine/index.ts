@@ -78,10 +78,12 @@ function gcQuality(gc: number): GuideCandidate["gcQuality"] {
 /** Find NGG PAM sites on a strand and return the preceding 20 nt protospacers. */
 function findCandidatesOnStrand(
   seq: string,
-  strand: Strand
+  strand: Strand,
+  maxCandidates = 100
 ): Omit<GuideCandidate, "offTargets" | "specificityScore" | "overallScore" | "riskLevel">[] {
   const results: Omit<GuideCandidate, "offTargets" | "specificityScore" | "overallScore" | "riskLevel">[] = [];
-  for (let i = 0; i <= seq.length - 3; i++) {
+  const limit = Math.min(seq.length - 3, 50000);
+  for (let i = 0; i <= limit; i++) {
     const triplet = seq.slice(i, i + 3);
     if (triplet[1] !== "G" || triplet[2] !== "G") continue; // NGG
     const protospacerStart = i - GUIDE_LENGTH;
@@ -97,6 +99,7 @@ function findCandidatesOnStrand(
       gcContent: gc,
       gcQuality: gcQuality(gc),
     });
+    if (results.length >= maxCandidates) break;
   }
   return results;
 }
@@ -111,12 +114,14 @@ function findOffTargets(
 ): OffTargetHit[] {
   const hits: OffTargetHit[] = [];
   const maxMismatches = 4;
+  const maxHits = 20;
 
   for (const [strand, haystack] of [
     ["+", fullSeqPlusStrand],
     ["-", fullSeqMinusStrand],
   ] as [Strand, string][]) {
-    for (let i = 0; i <= haystack.length - candidate.length; i++) {
+    const scanLen = Math.min(haystack.length - candidate.length, 25000);
+    for (let i = 0; i <= scanLen; i++) {
       if (strand === selfStrand && i === selfPosition) continue; // skip self-match
       const window = haystack.slice(i, i + candidate.length);
       let mismatches = 0;
@@ -131,6 +136,7 @@ function findOffTargets(
         const pamEnd = i + candidate.length + 3;
         const pam = pamEnd <= haystack.length ? haystack.slice(i + candidate.length, pamEnd) : null;
         hits.push({ position: i, strand, mismatches, seedMismatches, sequence: window, pam });
+        if (hits.length >= maxHits) break;
       }
     }
   }
@@ -167,7 +173,10 @@ export function analyzeSequence(rawSequence: string): GenomicEngineResult {
     ...findCandidatesOnStrand(minusStrand, "-"),
   ];
 
-  const candidates: GuideCandidate[] = rawCandidates.map((c) => {
+  // Cap candidates for responsive in-browser evaluation on large sequences
+  const evaluatedCandidates = rawCandidates.slice(0, 150);
+
+  const candidates: GuideCandidate[] = evaluatedCandidates.map((c) => {
     const offTargets = findOffTargets(c.sequence, plusStrand, minusStrand, c.position, c.strand);
     const specificity = specificityScore(offTargets);
     const gcPenalty = c.gcQuality === "low" ? 15 : 0;

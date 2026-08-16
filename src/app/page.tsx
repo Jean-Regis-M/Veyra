@@ -3,6 +3,7 @@ import { ArrowRight, Play } from "lucide-react";
 import DnaHelixModel from "@/components/dna/HelixModel";
 import PipelineDemo from "@/components/PipelineDemo";
 import Reveal from "@/components/Reveal";
+import { Header } from "@/components/Header";
 
 // The deterministic engine's actual computational steps — not marketing copy.
 const ENGINE_STEPS = ["PAM search", "GC content", "Off-target scan", "Seed mismatch", "Specificity ranking"];
@@ -56,26 +57,7 @@ function EngineStepsRow({ className = "" }: { className?: string }) {
 export default function Home() {
   return (
     <div className="flex-1 veyra-hero-bg">
-      <header className="fixed top-4 inset-x-0 z-50 px-4 sm:px-6">
-        <div className="veyra-glass mx-auto max-w-4xl px-5 h-14 flex items-center justify-between rounded-full!">
-          <div className="flex items-center gap-2 font-display text-sm font-semibold tracking-wide text-foreground">
-            <span className="veyra-pulse-dot h-2 w-2 rounded-full bg-primary" />
-            VEYRA
-          </div>
-          <nav className="hidden sm:flex items-center gap-7 text-sm text-muted">
-            <a href="#pipeline" className="hover:text-foreground transition-colors">Pipeline</a>
-            <a href="#features" className="hover:text-foreground transition-colors">Approach</a>
-            <Link href="/raw" className="hover:text-foreground transition-colors">Raw backend</Link>
-            <Link href="/midend" className="hover:text-foreground transition-colors">MIDEND</Link>
-          </nav>
-          <Link
-            href="/analyze"
-            className="rounded-full bg-linear-to-r from-primary to-secondary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
-          >
-            Launch analysis
-          </Link>
-        </div>
-      </header>
+      <Header />
 
       <section className="pt-36 pb-10 px-4 sm:px-6">
         <Reveal className="mx-auto max-w-[1440px] grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">

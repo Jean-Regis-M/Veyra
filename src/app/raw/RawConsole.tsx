@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BACKEND_ENDPOINTS, BackendEndpoint } from "@/lib/backendEndpoints";
 import { callBackendRaw, checkBackendHealth, BACKEND_BASE_URL } from "@/lib/backend";
+import { Header } from "@/components/Header";
 
 const CATEGORIES = Array.from(new Set(BACKEND_ENDPOINTS.map((e) => e.category)));
 
@@ -58,25 +59,14 @@ export default function RawConsole() {
 
   return (
     <div className="flex-1 pt-24 pb-20 veyra-hero-bg">
-      <header className="fixed top-4 inset-x-0 z-50 px-4 sm:px-6">
-        <div className="veyra-glass mx-auto max-w-4xl px-5 h-14 flex items-center justify-between rounded-full!">
-          <Link href="/" className="flex items-center gap-2 font-display text-sm font-semibold tracking-wide text-foreground">
-            <span
-              className={`h-2 w-2 rounded-full ${backendOnline ? "veyra-pulse-dot bg-engine" : "bg-risk-high"}`}
-            />
-            VEYRA
-          </Link>
-          <span className="font-mono text-xs text-muted uppercase tracking-widest">Raw backend</span>
-        </div>
-      </header>
+      <Header online={backendOnline} />
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mb-8">
           <h1 className="font-display text-2xl font-semibold text-foreground">Raw backend access</h1>
           <p className="mt-2 text-sm text-muted max-w-2xl">
-            Every deterministic VEYRA HTTP endpoint, called directly — no AI in the loop. This is the &ldquo;raw
-            backend&rdquo; surface from the frontend/MIDEND plan; the AI-orchestration (MIDEND) layer is separate
-            and not built yet. Responses shown here are exactly what {BACKEND_BASE_URL} returns.
+            Every deterministic VEYRA HTTP endpoint, called directly — no AI in the loop. The AI-orchestrated
+            experience is available in <Link href="/chat" className="text-primary hover:underline font-semibold">VEYRA Chat</Link>. Responses shown here are exactly what {BACKEND_BASE_URL} returns.
           </p>
           {backendOnline === false && (
             <p className="mt-3 text-sm text-risk-high">Backend unreachable at {BACKEND_BASE_URL} — start it and reload.</p>

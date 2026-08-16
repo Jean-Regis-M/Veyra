@@ -21,73 +21,125 @@ function buildPrompt(body: ReasonRequestBody): string {
   const top = body.candidates.slice(0, 5);
   const lines = top.map(
     (c) =>
-      `- id=${c.id} seq=${c.sequence} pam=${c.pam} strand=${c.strand} gc=${(c.gcContent * 100).toFixed(0)}% overallScore=${c.overallScore} riskLevel=${c.riskLevel} offTargets=${c.offTargets.length}`
+      `- Candidate ID: ${c.id} | Protospacer: ${c.sequence} | PAM: ${c.pam} | Strand: ${c.strand} | GC Content: ${(c.gcContent * 100).toFixed(0)}% | Overall Score: ${c.overallScore}/100 | Risk Level: ${c.riskLevel} | Off-Target Hits: ${c.offTargets.length}`
   );
   return [
-    "You are explaining CRISPR guide-RNA candidate scores that were already computed by a deterministic algorithm.",
-    "Do not invent new scores or numbers. Only explain and contextualize the numbers given below.",
-    "Be concise, plain-language, and note this is an illustrative research prototype, not clinical guidance.",
+    "You are VEYRA's genomic intelligence co-pilot explaining CRISPR/Cas9 guide-RNA candidate scores computed by our deterministic algorithms.",
+    "Rules:",
+    "- Do NOT invent new scores, off-target counts, or clinical claims.",
+    "- Only contextualize and interpret the deterministic numbers provided below.",
+    "- Explain why the top-ranked candidate is preferred (e.g. balanced GC, high specificity, low off-target risk).",
+    "- Be clear, concise, and professional. State that this is an illustrative research prototype, not medical or clinical advice.",
     "",
-    `Input sequence length: ${body.sequence.length} bp`,
-    "Top candidates:",
+    `Target sequence length: ${body.sequence.length} bp`,
+    "Top candidates evaluated:",
     ...lines,
     "",
-    "Return a short overall summary, then one short note per candidate id explaining its risk level in plain language.",
+    "Provide a structured analysis with an executive summary and brief bulleted evaluations for the top candidate guides.",
   ].join("\n");
 }
 
 function stubResponse(body: ReasonRequestBody): ReasonResponse {
   return {
     summary:
-      "AI reasoning is not configured for this deployment (no ANTHROPIC_API_KEY set). Showing deterministic scores only — this is the integration point where an LLM would explain the ranked candidates below.",
+      "AI reasoning is not configured for this deployment (no API key set). Showing deterministic scores only — this is the integration point where the AI model explains the ranked candidates below.",
     perCandidate: body.candidates.slice(0, 5).map((c) => ({
       id: c.id,
-      note: `Deterministic score ${c.overallScore}/100 (${c.riskLevel} risk), ${c.offTargets.length} off-target hit(s) found within the input sequence. Set ANTHROPIC_API_KEY to enable AI-generated explanations.`,
+      note: `Deterministic score ${c.overallScore}/100 (${c.riskLevel} risk), ${c.offTargets.length} off-target hit(s) found within the input sequence.`,
     })),
     source: "stub",
   };
 }
 
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as ReasonRequestBody;
+  let body: ReasonRequestBody;
+  try {
+    body = (await req.json()) as ReasonRequestBody;
+  } catch {
+    return NextResponse.json({ error: "Expected { sequence, candidates }." }, { status: 400 });
+  }
 
   if (!body?.sequence || !Array.isArray(body.candidates)) {
     return NextResponse.json({ error: "Expected { sequence, candidates }." }, { status: 400 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(stubResponse(body));
-  }
+  // 1. Check for OpenAI-compatible / MIDEND AI configuration
+  const midendKey = process.env.MIDEND_AI_API_KEY || process.env.OPENAI_API_KEY;
+  const midendBaseUrl = process.env.MIDEND_AI_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.llm7.io/v1";
+  const midendModel = process.env.MIDEND_AI_MODEL || "default";
 
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 1024,
-        messages: [{ role: "user", content: buildPrompt(body) }],
-      }),
-    });
+  if (midendKey) {
+    try {
+      const endpoint = `${midendBaseUrl.replace(/\/+$/, "")}/chat/completions`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${midendKey}`,
+        },
+        body: JSON.stringify({
+          model: midendModel,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are VEYRA's AI reasoning layer. Explain CRISPR guide-RNA candidate scores that were computed by deterministic algorithms. Do not invent scores or clinical claims. Only explain the evidence given. Be concise and structured.",
+            },
+            { role: "user", content: buildPrompt(body) },
+          ],
+          temperature: 0.2,
+          max_tokens: 1024,
+        }),
+      });
 
-    if (!res.ok) {
-      return NextResponse.json(stubResponse(body));
+      if (res.ok) {
+        const data = await res.json();
+        const text: string = data?.choices?.[0]?.message?.content ?? "";
+        if (text) {
+          return NextResponse.json({
+            summary: text,
+            perCandidate: [],
+            source: "ai",
+          } satisfies ReasonResponse);
+        }
+      }
+    } catch {
+      // Fall through to Anthropic or stub
     }
-
-    const data = await res.json();
-    const text: string = data?.content?.[0]?.text ?? "";
-
-    return NextResponse.json({
-      summary: text,
-      perCandidate: [],
-      source: "ai",
-    } satisfies ReasonResponse);
-  } catch {
-    return NextResponse.json(stubResponse(body));
   }
+
+  // 2. Check for Anthropic API configuration
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-5",
+          max_tokens: 1024,
+          messages: [{ role: "user", content: buildPrompt(body) }],
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text: string = data?.content?.[0]?.text ?? "";
+        return NextResponse.json({
+          summary: text,
+          perCandidate: [],
+          source: "ai",
+        } satisfies ReasonResponse);
+      }
+    } catch {
+      // Fall through to stub
+    }
+  }
+
+  // 3. Fallback to deterministic stub response if no API keys succeed
+  return NextResponse.json(stubResponse(body));
 }

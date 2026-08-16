@@ -22,17 +22,44 @@ MAX_INPUT_BYTES = 50 * 1024 * 1024
 ANALYSIS_FORMATS: dict[str, dict[str, Any]] = {
     "fasta": {
         "extensions": {".fa", ".fasta", ".fna", ".faa", ".fns", ".frn"},
-        "mime_types": {"text/x-fasta", "application/x-fasta", "chemical/seq-na-fasta", "text/plain"},
+        "mime_types": {
+            "text/x-fasta",
+            "application/x-fasta",
+            "application/x-ugene-fa",
+            "application/x-ugene-fasta",
+            "chemical/seq-na-fasta",
+            "chemical/x-fasta",
+            "text/plain",
+            "text/fasta",
+            "text/x-fna",
+            "application/octet-stream",
+        },
         "backend_operation": "ingest_file",
     },
     "fastq": {
         "extensions": {".fq", ".fastq", ".fqr"},
-        "mime_types": {"text/fastq", "application/fastq", "text/plain"},
+        "mime_types": {
+            "text/fastq",
+            "application/fastq",
+            "application/x-fastq",
+            "application/x-ugene-fq",
+            "text/x-fastq",
+            "text/plain",
+            "application/octet-stream",
+        },
         "backend_operation": "ingest_file",
     },
     "genbank": {
         "extensions": {".gb", ".gbk", ".gbff", ".genbank"},
-        "mime_types": {"text/plain", "chemical/seq-genbank", "application/x-genbank"},
+        "mime_types": {
+            "text/plain",
+            "chemical/seq-genbank",
+            "application/x-genbank",
+            "application/x-ugene-gbk",
+            "application/genbank",
+            "text/x-genbank",
+            "application/octet-stream",
+        },
         "backend_operation": "ingest_file",
     },
 }
@@ -40,12 +67,26 @@ ANALYSIS_FORMATS: dict[str, dict[str, Any]] = {
 CALIBRATION_FORMATS: dict[str, dict[str, Any]] = {
     "csv": {
         "extensions": {".csv"},
-        "mime_types": {"text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"},
+        "mime_types": {
+            "text/csv",
+            "text/x-csv",
+            "application/csv",
+            "text/plain",
+            "application/vnd.ms-excel",
+            "text/comma-separated-values",
+            "application/octet-stream",
+        },
         "backend_operation": "calibration",
     },
     "tsv": {
         "extensions": {".tsv", ".tab"},
-        "mime_types": {"text/tab-separated-values", "text/tsv", "text/plain"},
+        "mime_types": {
+            "text/tab-separated-values",
+            "text/tsv",
+            "text/x-tsv",
+            "text/plain",
+            "application/octet-stream",
+        },
         "backend_operation": "calibration",
     },
 }
@@ -265,9 +306,12 @@ def validate_input_file(filename: str, content: bytes, content_type: str | None 
         raise MIDENDInputError("unsupported_file_type",
                                f"Unsupported input file type '{ext or '[no extension]'}'. Supported extensions: {supported}.")
 
-    if content_type and content_type.lower().split(";", 1)[0] not in ANALYSIS_FORMATS[expected]["mime_types"]:
-        if content_type.lower().split(";", 1)[0] not in {"application/octet-stream", ""}:
-            raise MIDENDInputError("unsupported_file_type", f"MIME type '{content_type}' does not match '{filename}'.")
+    if content_type:
+        mime = content_type.lower().split(";", 1)[0].strip()
+        valid_mimes = ANALYSIS_FORMATS[expected]["mime_types"]
+        if mime not in valid_mimes and not mime.startswith("text/") and not mime.startswith("chemical/") and mime not in {"application/octet-stream", ""}:
+            if any(mime.startswith(disallowed) for disallowed in ("image/", "audio/", "video/", "application/zip", "application/pdf", "application/x-tar")):
+                raise MIDENDInputError("unsupported_file_type", f"MIME type '{content_type}' does not match '{filename}'.")
 
     try:
         text = content.decode("utf-8")

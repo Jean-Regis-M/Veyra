@@ -7,6 +7,7 @@ implementations remain in the existing HTTP/MCP connectors.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -17,13 +18,14 @@ _KNOWN_SECRETS: set[str] = set()
 
 
 def register_secret(value: str | None) -> None:
-    if value:
-        _KNOWN_SECRETS.add(value)
+    if value and isinstance(value, str) and value.strip():
+        _KNOWN_SECRETS.add(value.strip())
 
 try:
     from .ai.errors import AIProviderError, AIProviderNotConfiguredError
     from .ai.models import AIMessage
     from .ai.openai_compatible import OpenAICompatibleProvider
+    from .ai.tool_definitions import analyze_parameters_meta, get_native_tools
     from .config.ai_provider import AIConfigError, AIProviderConfig, get_ai_config, get_ai_config_manager, validate_config
     from .config.settings import get_settings
     from .connectors import get_backend_connector
@@ -33,6 +35,7 @@ except ImportError:  # pragma: no cover
     from ai.errors import AIProviderError, AIProviderNotConfiguredError
     from ai.models import AIMessage
     from ai.openai_compatible import OpenAICompatibleProvider
+    from ai.tool_definitions import analyze_parameters_meta, get_native_tools
     from config.ai_provider import AIConfigError, AIProviderConfig, get_ai_config, get_ai_config_manager, validate_config
     from config.settings import get_settings
     from connectors import get_backend_connector
@@ -50,6 +53,8 @@ def new_id(prefix: str) -> str:
 
 def safe_value(value: Any) -> Any:
     """Remove common secret-shaped fields from public execution metadata."""
+    if not value or isinstance(value, (int, float, bool)):
+        return value
     secret_names = {"api_key", "apikey", "authorization", "token", "password", "secret"}
     if isinstance(value, dict):
         return {k: "[REDACTED]" if k.lower() in secret_names else safe_value(v) for k, v in value.items()}
@@ -57,8 +62,70 @@ def safe_value(value: Any) -> Any:
         return [safe_value(v) for v in value]
     if isinstance(value, str):
         for secret in _KNOWN_SECRETS:
-            value = value.replace(secret, "[REDACTED]")
+            if secret and len(secret) >= 4 and secret in value:
+                value = value.replace(secret, "[REDACTED]")
     return value
+
+
+def format_tool_result_for_ai(tool_name: str, result: Any) -> str:
+    """Format compact structured evidence for LLM prompt context."""
+    res_dict = result.to_dict() if hasattr(result, "to_dict") else safe_value(result or {})
+    if not isinstance(res_dict, dict):
+        return json.dumps(safe_value(res_dict))
+
+    if tool_name == "spcas9_gene_cutting":
+        cands = res_dict.get("candidates", [])
+        compact_cands = [
+            {
+                "rank": c.get("rank"),
+                "protospacer": c.get("protospacer"),
+                "pam": c.get("pam"),
+                "strand": c.get("strand"),
+                "cut_site": c.get("cut_site"),
+                "gc_content": c.get("features", {}).get("gc", {}).get("summary", {}).get("gc_content"),
+                "ontarget_score": c.get("ontarget", {}).get("score"),
+                "warnings": c.get("warnings", []),
+            }
+            for c in cands[:10]
+        ]
+        compact = {
+            "skill": "spcas9_gene_cutting",
+            "status": res_dict.get("status"),
+            "total_candidates": len(cands),
+            "top_candidates": compact_cands,
+            "warnings": res_dict.get("warnings", []),
+            "errors": res_dict.get("errors", []),
+        }
+        return json.dumps(compact)
+
+    if tool_name == "pam_scan":
+        rows = res_dict.get("rows", [])
+        compact = {
+            "total_sites": res_dict.get("summary", {}).get("total_sites", len(rows)),
+            "top_sites": [
+                {
+                    "protospacer": r.get("protospacer") if isinstance(r, dict) else getattr(r, "protospacer", ""),
+                    "pam": r.get("pam") if isinstance(r, dict) else getattr(r, "pam", ""),
+                    "strand": r.get("strand") if isinstance(r, dict) else getattr(r, "strand", "+"),
+                    "start": r.get("start") if isinstance(r, dict) else getattr(r, "start", None),
+                    "end": r.get("end") if isinstance(r, dict) else getattr(r, "end", None),
+                }
+                for r in rows[:10]
+            ],
+            "summary": res_dict.get("summary", {}),
+        }
+        return json.dumps(compact)
+
+    if tool_name == "offtarget_search":
+        rows = res_dict.get("rows", [])
+        compact = {
+            "total_candidates": res_dict.get("summary", {}).get("total_candidates", len(rows)),
+            "mismatch_distribution": res_dict.get("summary", {}).get("mismatch_distribution", {}),
+            "top_hits": rows[:8],
+        }
+        return json.dumps(compact)
+
+    return json.dumps(res_dict)
 
 
 @dataclass
@@ -156,7 +223,22 @@ class ToolCallState:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def public(self) -> dict[str, Any]:
-        return safe_value(self.__dict__.copy())
+        return {
+            "call_id": self.call_id,
+            "execution_id": self.execution_id,
+            "tool": self.tool,
+            "connector": self.connector,
+            "arguments": self.arguments,
+            "status": self.status,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "duration_ms": self.duration_ms,
+            "success": self.success,
+            "result": self.result,
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "metadata": self.metadata,
+        }
 
 
 @dataclass
@@ -424,27 +506,36 @@ class ControlPlane:
         self.providers.current_execution_id = execution.execution_id
         await self._emit(execution, "execution_started", status=execution.status)
         try:
-            calls = payload.get("tool_calls") or []
-            groups = payload.get("parallel_groups") or []
+            calls = list(payload.get("tool_calls") or [])
+            groups = list(payload.get("parallel_groups") or [])
+            ai_request = payload.get("ai_request")
+
             if groups:
                 for group in groups:
                     await self._run_group(execution, group.get("group_id") or new_id("group"), group.get("calls", []))
             elif calls:
                 for call in calls:
                     await self._run_call(execution, call)
-            ai_request = payload.get("ai_request")
             if ai_request:
                 await self._run_ai(execution, ai_request, conversation_id)
             if execution.status != "failed":
                 execution.status = "completed"
                 await self._emit(execution, "execution_completed", assistant_output=execution.assistant_output)
-        except Exception:
+        except Exception as exc:
             execution.status = "failed"
-            execution.errors.append("execution failed")
+            if not execution.errors:
+                execution.errors.append(f"execution_error: {exc}")
             await self._emit(execution, "execution_failed", errors=execution.errors)
         finally:
             execution.finished_at, execution.elapsed_ms = now_iso(), (time.perf_counter() - started) * 1000
             if self.providers.current_execution_id == execution.execution_id:
+                self.providers.current_execution_id = None
+                self.providers.current_request_id = None
+                self.providers.generation_active = False
+                self.providers.reasoning_active = False
+            await self._emit(execution, "execution_finished", elapsed_ms=execution.elapsed_ms)
+            for queue in list(execution.subscribers):
+                await queue.put(None)
                 self.providers.current_execution_id = None
                 self.providers.current_request_id = None
                 self.providers.generation_active = False
@@ -465,35 +556,85 @@ class ControlPlane:
                          calls=[s.public() for s in states], duration_ms=duration)
 
     def _make_call(self, execution: ExecutionState, call: dict[str, Any]) -> ToolCallState:
-        state = ToolCallState(call.get("call_id") or new_id("call"), execution.execution_id,
-                              call.get("tool") or call.get("tool_name", ""), execution.connector,
-                              safe_value(call.get("arguments", {})))
+        tool_name = call.get("tool") or call.get("tool_name", "")
+        arguments = safe_value(call.get("arguments", {}))
+        params_meta = analyze_parameters_meta(tool_name, arguments)
+        metadata = safe_value(call.get("metadata", {}))
+        metadata["parameters_meta"] = params_meta
+        state = ToolCallState(
+            call.get("call_id") or new_id("call"),
+            execution.execution_id,
+            tool_name,
+            execution.connector,
+            arguments,
+            metadata=metadata,
+        )
         execution.tool_calls.append(state)
         return state
 
     async def _run_call(self, execution: ExecutionState, call: dict[str, Any], state: ToolCallState | None = None):
         state = state or self._make_call(execution, call)
+
+        # Context inheritance for attached inputs or raw message sequence when tool call omits sequence/input_id
+        if not state.arguments.get("sequence") and not state.arguments.get("input_id"):
+            if execution.validated_inputs:
+                for item_meta in execution.validated_inputs:
+                    item_id = item_meta.get("input_id")
+                    if item_id:
+                        try:
+                            val_item = self.inputs.get(item_id)
+                            if val_item.input_class == "analysis_input":
+                                if state.tool == "spcas9_gene_cutting":
+                                    state.arguments["input_id"] = val_item.input_id
+                                else:
+                                    text = val_item._content[:5000].decode("utf-8", errors="replace")
+                                    clean_seq = "".join(line.strip() for line in text.split("\n") if line.strip() and not line.startswith(">"))
+                                    if clean_seq:
+                                        state.arguments["sequence"] = clean_seq[:2000]
+                                break
+                        except Exception:
+                            pass
+
         state.status, state.started_at = "running", now_iso()
         await self._emit(execution, "tool_call_started", call=state.public())
         started = time.perf_counter()
         event_name = "tool_call_failed"
         result = None
-        try:
-            connector = get_backend_connector(execution.connector)
-            result = await connector.call_tool(state.tool, state.arguments)
-            state.result = safe_value(result.to_dict())
-            state.errors, state.warnings, state.metadata = result.errors, result.warnings, safe_value(result.metadata)
-            state.success = result.is_success
-            state.status = "completed" if state.success else "failed"
-            event_name = "tool_call_completed" if state.success else "tool_call_failed"
-            execution.deterministic_evidence.append(state.result)
-        except Exception as exc:
-            # Keep connector diagnostics useful while still redacting any
-            # accidentally surfaced secret-shaped value.
-            state.status, state.errors = "failed", [safe_value(str(exc))]
-        finally:
-            state.finished_at, state.duration_ms = now_iso(), (time.perf_counter() - started) * 1000
-            await self._emit(execution, event_name, call=state.public())
+
+        if state.tool in {"spcas9_gene_cutting", "offtarget_toxicity_risk", "model_calibration"}:
+            try:
+                skill = get_skill(state.tool)
+                skill_res = await skill.execute(
+                    state.arguments,
+                    control_plane=self,
+                    call_tool=lambda t, a: self._run_call(execution, {"tool": t, "arguments": a}),
+                    emit=lambda e, **d: self._emit(execution, e, skill=state.tool, **d),
+                )
+                state.result = safe_value(skill_res)
+                state.success = skill_res.get("status") in {"complete", "prototype", "partial"}
+                state.status = "completed" if state.success else "failed"
+                state.errors = skill_res.get("errors", [])
+                state.warnings = skill_res.get("warnings", [])
+                execution.deterministic_evidence.append(state.result)
+                event_name = "tool_call_completed" if state.success else "tool_call_failed"
+                result = skill_res
+            except Exception as exc:
+                state.status, state.errors = "failed", [safe_value(str(exc))]
+        else:
+            try:
+                connector = get_backend_connector(execution.connector)
+                result = await connector.call_tool(state.tool, state.arguments)
+                state.result = safe_value(result.to_dict())
+                state.errors, state.warnings, state.metadata = result.errors, result.warnings, safe_value(result.metadata)
+                state.metadata["parameters_meta"] = analyze_parameters_meta(state.tool, state.arguments)
+                state.success = result.is_success
+                state.status = "completed" if state.success else "failed"
+                event_name = "tool_call_completed" if state.success else "tool_call_failed"
+                execution.deterministic_evidence.append(state.result)
+            except Exception as exc:
+                state.status, state.errors = "failed", [safe_value(str(exc))]
+        state.finished_at, state.duration_ms = now_iso(), (time.perf_counter() - started) * 1000
+        await self._emit(execution, event_name, call=state.public())
         return result
 
     async def _run_skill(self, execution: ExecutionState, skill: Any, payload: dict[str, Any]) -> None:
@@ -558,30 +699,138 @@ class ControlPlane:
         try:
             conversation = self.conversations.get(conversation_id) if conversation_id else None
             history = conversation["messages"] if conversation else []
-            message = request.get("message", "")
-            messages = self.prompt_builder.build(system_instructions="You are the VEYRA MIDEND assistant.",
-                                                 developer_context=None, history=history, user_message=message,
-                                                 tool_results=execution.deterministic_evidence)
+            raw_message = request.get("message", "")
+
+            input_summaries = []
             if execution.validated_inputs:
-                messages.insert(1, AIMessage(role="system", content=f"VALIDATED INPUT METADATA:\n{execution.validated_inputs}"))
-            response = await OpenAICompatibleProvider(record.config).generate(messages, execution.model)
-            execution.assistant_output = response.content
-            req.status, req.usage, req.finish_reason = "completed", response.usage, response.finish_reason
+                for item_meta in execution.validated_inputs:
+                    item_id = item_meta.get("input_id")
+                    if item_id:
+                        try:
+                            val_item = self.inputs.get(item_id)
+                            if val_item.input_class == "analysis_input":
+                                text = val_item._content[:10000].decode("utf-8", errors="replace")
+                                lines = text.split("\n")
+                                first_line = lines[0] if lines else ""
+                                clean_seq = "".join(line.strip() for line in lines if line.strip() and not line.startswith(">"))
+                                preview = clean_seq[:600]
+                                input_summaries.append(
+                                    f"[Attached Genomic Target File: {val_item.filename} (Format: {val_item.detected_format}, Total Size: {val_item.size_bytes:,} bytes, Header: {first_line})]\n"
+                                    f"Target Sequence (5' to 3', first {len(preview)} bp):\n{preview}\n\n"
+                                    f"MANDATORY INSTRUCTION: When asked to find PAM sites, analyze CRISPR candidates, or determine properties of this attached target, invoke the native tools (pam_scan or spcas9_gene_cutting) on this target sequence."
+                                )
+                            elif val_item.input_class == "calibration_input":
+                                input_summaries.append(
+                                    f"[Attached Calibration Dataset: {val_item.filename} (Format: {val_item.detected_format}, Samples: {val_item.row_count}, Columns: {', '.join(val_item.columns or [])})]"
+                                )
+                        except Exception:
+                            pass
+
+            effective_user_message = (
+                f"{raw_message}\n\n" + "\n\n".join(input_summaries)
+                if input_summaries and not any(s in raw_message for s in input_summaries)
+                else raw_message
+            )
+
+            system_instructions = (
+                "You are VEYRA — VEYRA Intelligence, an interpretable genomic intelligence engine for CRISPR/Cas9 guide design, sequence analysis, "
+                "and empirical model calibration. You have access to VEYRA's native deterministic calculation tools (pam_scan, compute_cut_site, "
+                "compute_gc_content, compute_melting_temp, compute_secondary_structure, check_homopolymer_runs, compute_positional_features, "
+                "compute_dinucleotide_composition, compute_seed_gc, offtarget_search, score_offtargets, rank_candidates, predict_ontarget_efficiency, "
+                "and spcas9_gene_cutting skill).\n\n"
+                "MANDATORY TOOL USE RULE:\n"
+                "Whenever the user asks to find PAM sites, design/evaluate CRISPR guides, calculate properties (GC, Tm, cut sites, homopolymers), "
+                "or analyze a target sequence or attached file, you MUST call the appropriate native tool (such as pam_scan, compute_gc_content, "
+                "or spcas9_gene_cutting) to obtain real deterministic evidence before giving your final answer. If an attached sequence excerpt is provided, "
+                "pass it to the tool arguments. Ground all biological decisions in deterministic tool results and established literature."
+            )
+
+            messages = self.prompt_builder.build(
+                system_instructions=system_instructions,
+                developer_context=None,
+                history=history,
+                user_message=effective_user_message,
+                tool_results=execution.deterministic_evidence,
+            )
+
+            native_tools = get_native_tools()
+            turn = 0
+            max_turns = 6
+            response = None
+
+            while turn < max_turns:
+                turn += 1
+                response = await OpenAICompatibleProvider(record.config).generate(
+                    messages, execution.model, tools=native_tools
+                )
+                req.usage = response.usage
+                req.finish_reason = response.finish_reason
+
+                if response.tool_calls:
+                    tool_calls_list = response.tool_calls
+                    messages.append(
+                        AIMessage(
+                            role="assistant",
+                            content=response.content or None,
+                            tool_calls=tool_calls_list,
+                        )
+                    )
+
+                    for tc in tool_calls_list:
+                        tc_id = tc.get("id") or new_id("tc")
+                        func = tc.get("function") or {}
+                        fn_name = func.get("name")
+                        raw_args = func.get("arguments") or "{}"
+                        try:
+                            fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                        except Exception:
+                            fn_args = {}
+
+                        call_res = await self._run_call(execution, {
+                            "call_id": tc_id,
+                            "tool": fn_name,
+                            "arguments": fn_args,
+                        })
+
+                        tool_content = format_tool_result_for_ai(fn_name, call_res)
+                        messages.append(
+                            AIMessage(
+                                role="tool",
+                                tool_call_id=tc_id,
+                                name=fn_name,
+                                content=tool_content,
+                            )
+                        )
+                else:
+                    execution.assistant_output = response.content
+                    break
+
+            if response and not execution.assistant_output:
+                execution.assistant_output = response.content
+
+            req.status = "completed"
             if request.get("stream"):
                 await self._emit(execution, "ai_stream_chunk", request_id=req.request_id,
-                                 delta=response.content, final=True)
+                                 delta=execution.assistant_output or "", final=True)
             if conversation:
-                self.conversations.append(conversation_id, "user", message)
-                self.conversations.append(conversation_id, "assistant", response.content)
+                self.conversations.append(conversation_id, "user", raw_message)
+                self.conversations.append(conversation_id, "assistant", execution.assistant_output or "")
             event_name = "ai_generation_completed"
         except AIProviderNotConfiguredError as exc:
-            req.status, execution.status = "failed", "failed"
+            req.status = "failed"
             execution.errors.append(exc.code)
             event_error = exc.code
-        except AIProviderError:
-            req.status, execution.status = "failed", "failed"
+            execution.assistant_output = "AI provider is not configured. Deterministic backend calculation tools remain available."
+            execution.status = "completed" if execution.tool_calls else "failed"
+        except AIProviderError as exc:
+            req.status = "failed"
             execution.errors.append("ai_provider_error")
             event_error = "ai_provider_error"
+            if execution.tool_calls:
+                execution.status = "completed"
+                execution.assistant_output = "AI provider network is temporarily unavailable. Deterministic tool evidence above was executed directly by the VEYRA backend."
+            else:
+                execution.status = "failed"
         finally:
             req.finished_at, req.duration_ms = now_iso(), (time.perf_counter() - ai_started) * 1000
             execution.generation_active = execution.reasoning_active = False

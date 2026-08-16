@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { MessageSquare, ArrowRight } from "lucide-react";
 import DnaHelixModel from "@/components/dna/HelixModel";
+import { Header } from "@/components/Header";
 import { analyzeSequence, GenomicEngineResult, GuideCandidate } from "@/lib/genomic-engine";
 import { EXAMPLE_SEQUENCES } from "@/lib/examples";
 import {
@@ -60,6 +62,7 @@ function SourceTag({ source }: { source: "Engine" | "AI" }) {
 }
 
 export default function AnalyzeClient() {
+  const router = useRouter();
   const [sequence, setSequence] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenomicEngineResult | null>(null);
@@ -77,6 +80,32 @@ export default function AnalyzeClient() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedRecords, setUploadedRecords] = useState<IngestedRecord[] | null>(null);
 
+  function continueInVeyra(withReasoning = false) {
+    if (!sequence) return;
+    const analysisContext = {
+      sequence: sequence,
+      inputId: uploadedRecords?.[0]?.id || null,
+      selectedCandidate: selected
+        ? {
+            id: selected.id,
+            protospacer: selected.sequence,
+            pam: selected.pam,
+            strand: selected.strand,
+            position: selected.position,
+            gcContent: selected.gcContent,
+            tm: tm?.ok ? tm.data.tmCelsius : null,
+            onTargetScore: onTarget?.ok ? onTarget.data.score : null,
+            cfdScore: offTargetCfd?.ok ? offTargetCfd.data.maxCfd : null,
+          }
+        : null,
+      reasoningSummary: withReasoning ? reasoning?.summary : null,
+    };
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("veyra_analysis_continuation", JSON.stringify(analysisContext));
+    }
+    router.push("/chat");
+  }
+
   async function handleFileUpload(file: File) {
     setUploading(true);
     setUploadError(null);
@@ -88,8 +117,13 @@ export default function AnalyzeClient() {
       return;
     }
     if (result.data.length === 1) {
-      setSequence(result.data[0].sequence);
-      runAnalysis(result.data[0].sequence);
+      const rec = result.data[0];
+      const seq = rec.sequence.length > 5000 ? rec.sequence.slice(0, 5000) : rec.sequence;
+      setSequence(seq);
+      if (rec.sequence.length > 5000) {
+        setError(`Note: The uploaded genome/sequence is ${rec.length.toLocaleString()} bp. Loaded the first 5,000 bp for in-browser guide design.`);
+      }
+      runAnalysis(seq);
     } else {
       setUploadedRecords(result.data);
     }
@@ -115,7 +149,7 @@ export default function AnalyzeClient() {
       const res = await fetch("/api/reason", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sequence: seq, candidates }),
+        body: JSON.stringify({ sequence: seq.slice(0, 5000), candidates }),
       });
       const data = (await res.json()) as ReasonResponse;
       setReasoning(data);
@@ -136,9 +170,20 @@ export default function AnalyzeClient() {
   // interpolated between. Neutral (landing's default) until a result exists.
   const tintColor = useMemo(() => {
     if (!result) return "#eef3ee";
-    const normalized = sequence.trim().toUpperCase().replace(/[^ACGT]/g, "");
-    if (normalized.length === 0) return "#eef3ee";
-    const gc = normalized.split("").filter((b) => b === "G" || b === "C").length / normalized.length;
+    const sampleLen = Math.min(sequence.length, 5000);
+    let gcCount = 0;
+    let validCount = 0;
+    for (let i = 0; i < sampleLen; i++) {
+      const ch = sequence[i].toUpperCase();
+      if (ch === "G" || ch === "C") {
+        gcCount++;
+        validCount++;
+      } else if (ch === "A" || ch === "T") {
+        validCount++;
+      }
+    }
+    if (validCount === 0) return "#eef3ee";
+    const gc = gcCount / validCount;
     return gcToColor(gc);
   }, [result, sequence]);
 
@@ -212,15 +257,7 @@ export default function AnalyzeClient() {
 
   return (
     <div className="flex-1 pt-24 pb-20 veyra-hero-bg">
-      <header className="fixed top-4 inset-x-0 z-50 px-4 sm:px-6">
-        <div className="veyra-glass mx-auto max-w-4xl px-5 h-14 flex items-center justify-between rounded-full!">
-          <Link href="/" className="flex items-center gap-2 font-display text-sm font-semibold tracking-wide text-foreground">
-            <span className="veyra-pulse-dot h-2 w-2 rounded-full bg-primary" />
-            VEYRA
-          </Link>
-          <span className="font-mono text-xs text-muted uppercase tracking-widest">Analysis</span>
-        </div>
-      </header>
+      <Header online={backendOnline} />
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mb-8">
@@ -330,6 +367,19 @@ export default function AnalyzeClient() {
                       </span>
                     </button>
                   ))}
+                </div>
+
+                <div className="p-3 border-t border-border/40 bg-black/40 flex items-center justify-between">
+                  <span className="text-xs text-muted">Explore with Grounded AI</span>
+                  <button
+                    type="button"
+                    onClick={() => continueInVeyra(false)}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-primary to-secondary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer shadow-md"
+                  >
+                    <MessageSquare size={13} />
+                    <span>Continue in VEYRA</span>
+                    <ArrowRight size={13} />
+                  </button>
                 </div>
               </div>
             )}
@@ -494,11 +544,19 @@ export default function AnalyzeClient() {
               {!reasoningLoading && reasoning && (
                 <div className="space-y-3">
                   <p className="text-sm text-foreground/90 whitespace-pre-line">{reasoning.summary}</p>
-                  {reasoning.source === "stub" && (
-                    <p className="text-[11px] font-mono text-muted/70">
-                      integration point — not a model-generated response
-                    </p>
-                  )}
+                  <div className="pt-2 border-t border-border/30 flex items-center justify-between">
+                    <span className="text-[11px] font-mono text-muted/70">
+                      {reasoning.source === "ai" ? "Grounded AI Co-Pilot analysis" : "Deterministic preview"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => continueInVeyra(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-mono text-primary hover:underline cursor-pointer"
+                    >
+                      <span>Continue this in chat</span>
+                      <ArrowRight size={13} />
+                    </button>
+                  </div>
                 </div>
               )}
               {!reasoningLoading && !reasoning && (

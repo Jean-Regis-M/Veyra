@@ -6,8 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class AIMessage(BaseModel):
-    role: str = Field(..., description="'system', 'user', or 'assistant'")
-    content: str = Field(..., description="Message text content")
+    role: str = Field(..., description="'system', 'user', 'assistant', or 'tool'")
+    content: Optional[str] = Field(default=None, description="Message text content")
+    name: Optional[str] = Field(default=None, description="Function/tool name for tool responses")
+    tool_call_id: Optional[str] = Field(default=None, description="ID of the tool call being answered")
+    tool_calls: Optional[list[dict[str, Any]]] = Field(default=None, description="Native tool calls emitted by assistant")
 
 
 class AIRequest(BaseModel):
@@ -16,14 +19,14 @@ class AIRequest(BaseModel):
     temperature: float = 0.0
     max_tokens: Optional[int] = None
     stream: bool = False
+    tools: Optional[list[dict[str, Any]]] = None
 
 
 class AIResponse(BaseModel):
     content: str
     model: str
     provider: str = "openai_compatible"
-    # OpenAI-compatible providers may add nested usage metadata and strings
-    # such as service_tier; preserve it without exposing credentials.
+    tool_calls: Optional[list[dict[str, Any]]] = None
     usage: dict[str, Any] = Field(default_factory=dict)
     finish_reason: Optional[str] = None
     latency_ms: float = 0.0

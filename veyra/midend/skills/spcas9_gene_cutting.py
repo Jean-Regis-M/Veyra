@@ -102,7 +102,9 @@ class SpCas9GeneCuttingSkill(Skill):
         if not isinstance(max_candidates, int) or not 1 <= max_candidates <= 1000:
             raise SkillError("invalid_max_candidates", "max_candidates must be between 1 and 1000.", "max_candidates")
         if depth == "full" and not request.get("genome_id"):
-            raise SkillError("full_analysis_unavailable", "Full analysis requires genome_id for off-target search.", "genome_id")
+            request["depth"] = "quick"
+            warnings_list = request.setdefault("_pre_warnings", [])
+            warnings_list.append("Full analysis requested without genome_id; performed quick in-sequence analysis.")
 
     @staticmethod
     def _records(control_plane: Any, request: dict[str, Any]) -> list[tuple[str | None, str]]:
@@ -160,7 +162,7 @@ class SpCas9GeneCuttingSkill(Skill):
                       call_tool: Any, emit: Any) -> dict[str, Any]:
         self.validate(request, control_plane)
         depth = request.get("depth", "quick")
-        warnings: list[str] = []
+        warnings: list[str] = list(request.get("_pre_warnings", []))
         errors: list[str] = []
         candidates: list[dict[str, Any]] = []
         is_region = any(request.get(key) is not None for key in ("chrom", "start", "end"))
