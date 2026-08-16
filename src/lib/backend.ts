@@ -8,7 +8,13 @@
  * UI must show as "unavailable," never a fallback number of our own.
  */
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_VEYRA_BACKEND_URL ?? "http://8.231.81.99:8000";
+// Browser calls route through /api/proxy/backend by default — a same-origin
+// Next.js route handler that forwards server-side to the real backend. This
+// avoids two failure modes a direct browser fetch to an http:// host hits on
+// an https:// deployment: mixed-content blocking and cross-origin CORS.
+// Set NEXT_PUBLIC_VEYRA_BACKEND_URL to bypass the proxy (e.g. local dev
+// talking directly to a local backend).
+const BACKEND_URL = process.env.NEXT_PUBLIC_VEYRA_BACKEND_URL ?? "/api/proxy/backend";
 export const BACKEND_BASE_URL = BACKEND_URL;
 
 export interface OnTargetFallbackStep {
