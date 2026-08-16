@@ -64,40 +64,54 @@ export function DnaAnalysisPanel({
     return "#eef3ee";
   }, [candGc]);
 
-  if (!isOpen) {
-    return (
+  return (
+    <>
+      {/* Collapsed rail — animates in/out rather than hard-swapping with the panel */}
       <button
         type="button"
         onClick={onToggle}
-        className="fixed right-4 top-24 z-40 flex items-center gap-2 rounded-full border border-primary/40 bg-black/80 px-3.5 py-2 text-xs font-mono text-primary shadow-xl backdrop-blur-md hover:bg-primary/10 transition-all cursor-pointer"
+        aria-hidden={isOpen}
+        tabIndex={isOpen ? -1 : 0}
+        className={`veyra-tab-pulse fixed right-4 top-24 z-40 flex items-center gap-2 rounded-full border border-primary/40 bg-black/80 px-3.5 py-2 text-xs font-mono text-primary backdrop-blur-md hover:bg-primary/10 transition-all duration-300 cursor-pointer ${
+          isOpen ? "translate-x-6 opacity-0 pointer-events-none" : "translate-x-0 opacity-100"
+        }`}
         title="Open DNA & Analysis Panel"
       >
         <Dna size={15} className="animate-pulse text-primary" />
         <span className="hidden sm:inline font-semibold">DNA & Evidence</span>
         <ChevronLeft size={14} />
       </button>
-    );
-  }
 
-  return (
-    <aside className="w-full lg:w-[420px] shrink-0 border-l border-border/60 bg-black/70 backdrop-blur-xl p-4 overflow-y-auto space-y-4 max-h-[calc(100vh-5rem)] custom-scrollbar">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border/40 pb-3">
-        <div className="flex items-center gap-2">
-          <Dna size={18} className="text-primary" />
-          <h2 className="font-display text-sm font-semibold text-foreground">
-            DNA & Analysis Context
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="rounded-full p-1.5 text-muted hover:text-foreground hover:bg-white/10 transition-colors cursor-pointer"
-          aria-label="Close side panel"
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
+      {/* Slide-out panel — always mounted; a collapsing width wrapper does the
+          animation so nothing pops in/out abruptly. */}
+      <aside
+        className={`veyra-panel-slide relative shrink-0 overflow-hidden border-l ${
+          isOpen ? "w-full lg:w-[420px] border-border/60 opacity-100" : "w-0 border-transparent opacity-0"
+        }`}
+      >
+        <div className="relative w-full lg:w-[420px] h-full bg-black/70 backdrop-blur-xl p-4 space-y-4 max-h-[calc(100vh-5rem)] overflow-y-auto custom-scrollbar">
+          {/* Futuristic scan-line accent along the panel's leading edge */}
+          <div className="pointer-events-none absolute left-0 top-0 h-24 w-px overflow-hidden">
+            <div className="veyra-scan-sweep h-8 w-px bg-linear-to-b from-transparent via-primary to-transparent" />
+          </div>
+
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border/40 pb-3">
+            <div className="flex items-center gap-2">
+              <Dna size={18} className="text-primary" />
+              <h2 className="font-display text-sm font-semibold text-foreground">
+                DNA & Analysis Context
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={onToggle}
+              className="rounded-full p-1.5 text-muted hover:text-foreground hover:bg-white/10 transition-colors cursor-pointer"
+              aria-label="Close side panel"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
 
       {/* 3D DNA Model View */}
       <div className="rounded-xl border border-border/40 bg-black/40 overflow-hidden relative">
@@ -234,18 +248,20 @@ export function DnaAnalysisPanel({
         </div>
       )}
 
-      {/* Live Tool & Execution Activity Section */}
-      {context?.executionId && (
-        <div className="pt-2 border-t border-border/40">
-          <ExecutionActivity
-            executionId={context.executionId}
-            initialData={context.executionStatus}
-            live={true}
-            title="Live Tool Activity"
-            defaultCollapsed={false}
-          />
+          {/* Live Tool & Execution Activity Section */}
+          {context?.executionId && (
+            <div className="pt-2 border-t border-border/40">
+              <ExecutionActivity
+                executionId={context.executionId}
+                initialData={context.executionStatus}
+                live={true}
+                title="Live Tool Activity"
+                defaultCollapsed={false}
+              />
+            </div>
+          )}
         </div>
-      )}
-    </aside>
+      </aside>
+    </>
   );
 }

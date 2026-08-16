@@ -164,9 +164,53 @@ mark {
   animation: veyra-scene-in 450ms ease-out;
 }
 
+/* Futuristic slide-out evidence panel — width/opacity choreographed together
+   so the content never reflows mid-transition (it stays full-width the whole
+   time, just clipped by the collapsing wrapper). */
+.veyra-panel-slide {
+  transition: width 480ms cubic-bezier(0.16, 1, 0.3, 1), opacity 380ms ease, border-color 480ms ease;
+}
+
+@keyframes veyra-scan-sweep {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(420%);
+    opacity: 0;
+  }
+}
+
+.veyra-scan-sweep {
+  animation: veyra-scan-sweep 3.2s ease-in-out infinite;
+}
+
+@keyframes veyra-tab-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent), 0 0 18px -4px color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 75%, transparent), 0 0 28px -2px color-mix(in srgb, var(--primary) 85%, transparent);
+  }
+}
+
+.veyra-tab-pulse {
+  animation: veyra-tab-pulse 2.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .veyra-pulse-dot,
   .veyra-marquee-track,
+  .veyra-scan-sweep,
+  .veyra-tab-pulse,
   .veyra-scene-in {
     animation: none;
   }
