@@ -610,6 +610,11 @@ class ControlPlane:
     async def _run_call(self, execution: ExecutionState, call: dict[str, Any], state: ToolCallState | None = None):
         state = state or self._make_call(execution, call)
 
+        # Clean up malformed sequence argument if model passed English text as sequence
+        seq_val = state.arguments.get("sequence")
+        if isinstance(seq_val, str) and any(c.upper() not in "ACGTRYSWKMBDHVN" for c in seq_val if not c.isspace()):
+            state.arguments.pop("sequence", None)
+
         # Context inheritance for attached inputs or raw message sequence when tool call omits sequence/input_id
         if not state.arguments.get("sequence") and not state.arguments.get("input_id"):
             if execution.validated_inputs:
@@ -774,15 +779,23 @@ class ControlPlane:
                                 clean_seq = "".join(line.strip() for line in lines if line.strip() and not line.startswith(">"))
                                 preview = clean_seq[:200]
                                 input_summaries.append(
-                                    f"[Attached Genomic Analysis Target: input_id='{val_item.input_id}', filename='{val_item.filename}', format='{val_item.detected_format}', size={val_item.size_bytes:,} bytes, header='{first_line}']\n"
-                                    f"Target Sequence Preview (5' to 3', first {len(preview)} bp):\n{preview}\n"
-                                    f"INSTRUCTION: Use spcas9_gene_cutting (with input_id='{val_item.input_id}') or pam_scan to compute deterministic evidence on this target sequence."
+                                    f"--- ATTACHED GENOMIC TARGET FILE ---\n"
+                                    f"input_id: {val_item.input_id}\n"
+                                    f"filename: {val_item.filename} ({val_item.detected_format}, {val_item.size_bytes:,} bytes)\n"
+                                    f"header: {first_line}\n"
+                                    f"sequence_preview (5' to 3', first {len(preview)} bp): {preview}\n"
+                                    f"MANDATORY: Invoke tool `spcas9_gene_cutting` with argument `input_id='{val_item.input_id}'` to analyze this target.\n"
+                                    f"--- END ATTACHED FILE ---"
                                 )
                             elif val_item.input_class == "calibration_input":
                                 calibration_input_meta = val_item
                                 input_summaries.append(
-                                    f"[Attached Calibration Dataset: input_id='{val_item.input_id}', filename='{val_item.filename}', format='{val_item.detected_format}', samples={val_item.row_count}, columns={', '.join(val_item.columns or [])}]\n"
-                                    f"INSTRUCTION: Use model_calibration (with calibration_input_id='{val_item.input_id}') to run deterministic model fitting on this dataset."
+                                    f"--- ATTACHED CALIBRATION DATASET ---\n"
+                                    f"input_id: {val_item.input_id}\n"
+                                    f"filename: {val_item.filename} ({val_item.detected_format}, {val_item.row_count} rows)\n"
+                                    f"columns: {', '.join(val_item.columns or [])}\n"
+                                    f"MANDATORY: Invoke tool `model_calibration` with argument `calibration_input_id='{val_item.input_id}'` to fit models on this dataset.\n"
+                                    f"--- END CALIBRATION DATASET ---"
                                 )
                         except Exception:
                             pass

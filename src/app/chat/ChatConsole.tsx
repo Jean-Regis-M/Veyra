@@ -28,6 +28,7 @@ import {
   uploadInputFile,
   uploadCalibrationFile,
   ValidatedInputFile,
+  subscribeExecutionEvents,
 } from "@/lib/midend";
 import { ExecutionActivity } from "@/components/execution";
 import { DnaAnalysisPanel, AnalysisContextData } from "@/components/DnaAnalysisPanel";
@@ -86,13 +87,10 @@ export default function ChatConsole() {
         return;
       }
 
-      const seqSummary = `Target Sequence (${contextData.sequence?.length || 0} bp) with ${
-        contextData.candidates?.length || 0
-      } evaluated guide candidates. Top candidate: ${
-        contextData.selectedCandidate?.protospacer || "N/A"
-      } (PAM: ${contextData.selectedCandidate?.pam || "NGG"}, Rank #${
-        contextData.selectedCandidate?.rank || 1
-      })`;
+      const seqSummary = `Target Sequence (${contextData.sequence?.length || 0} bp) with ${contextData.candidates?.length || 0
+        } evaluated guide candidates. Top candidate: ${contextData.selectedCandidate?.protospacer || "N/A"
+        } (PAM: ${contextData.selectedCandidate?.pam || "NGG"}, Rank #${contextData.selectedCandidate?.rank || 1
+        })`;
 
       const book = buildSessionHandbook(activeSkills, activeTools, seqSummary);
       await postConversationMessage(conv.data.conversation_id, book, "system");
@@ -102,11 +100,9 @@ export default function ChatConsole() {
       setTurns([
         {
           role: "assistant",
-          content: `I've loaded your continued analysis for the target locus (${contextData.sequence?.length || 0} bp, ${
-            contextData.candidates?.length || 0
-          } candidates evaluated). Top candidate is **${
-            contextData.selectedCandidate?.protospacer || "active"
-          }**.\n\nYou can ask me to explain off-target risk, inspect cut sites, compare candidates, or attach experimental calibration data.`,
+          content: `I've loaded your continued analysis for the target locus (${contextData.sequence?.length || 0} bp, ${contextData.candidates?.length || 0
+            } candidates evaluated). Top candidate is **${contextData.selectedCandidate?.protospacer || "active"
+            }**.\n\nYou can ask me to explain off-target risk, inspect cut sites, compare candidates, or attach experimental calibration data.`,
         },
       ]);
       setStarting(false);
@@ -256,12 +252,37 @@ export default function ChatConsole() {
       },
     ]);
 
-    const result = await pollExecution(execId);
+    // Live SSE stream listener
+    const unsubscribe = subscribeExecutionEvents(
+      execId,
+      (evt) => {
+        if (evt.event === "ai_stream_chunk" && evt.delta) {
+          setTurns((prev) => {
+            const next = [...prev];
+            const lastIdx = next.length - 1;
+            if (lastIdx >= 0 && next[lastIdx].executionId === execId) {
+              next[lastIdx] = {
+                ...next[lastIdx],
+                content: (next[lastIdx].content || "") + String(evt.delta),
+              };
+            }
+            return next;
+          });
+        }
+      },
+      () => {
+        // Stream finished
+      }
+    );
+
+    const result = await pollExecution(execId, { maxAttempts: 120, intervalMs: 1000 });
+    unsubscribe();
+
     if (!result.ok) {
       setTurns((prev) => {
         const next = [...prev];
         const lastIdx = next.length - 1;
-        if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
+        if (lastIdx >= 0 && next[lastIdx].executionId === execId) {
           next[lastIdx] = {
             role: "assistant",
             content: `(${result.error})`,
@@ -272,17 +293,29 @@ export default function ChatConsole() {
         return next;
       });
     } else {
+      const execData = result.data;
+      const isFailed = execData.status === "failed";
+      const isTimedOut = execData.status === "timed_out";
+
+      const fallbackContent = isTimedOut
+        ? "(Execution timed out after exceeding timeout budget)"
+        : isFailed
+          ? `(Execution failed: ${execData.errors?.join("; ") || "unknown error"})`
+          : execData.tool_calls && execData.tool_calls.length > 0
+            ? `Executed ${execData.tool_calls.length} deterministic tools and gathered genomic evidence.`
+            : "(Execution completed)";
+
       setTurns((prev) => {
         const next = [...prev];
         const lastIdx = next.length - 1;
-        if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
+        if (lastIdx >= 0 && next[lastIdx].executionId === execId) {
           next[lastIdx] = {
             role: "assistant",
-            content: result.data.assistant_output ?? "(no output generated)",
+            content: execData.assistant_output || next[lastIdx].content || fallbackContent,
             executionId: execId,
-            executionStatus: result.data,
-            evidence: result.data.tool_calls,
-            errors: result.data.errors,
+            executionStatus: execData,
+            evidence: execData.tool_calls,
+            errors: execData.errors,
             isRunning: false,
           };
         }
@@ -292,7 +325,7 @@ export default function ChatConsole() {
       setAnalysisContext((prev) => ({
         ...prev,
         executionId: execId,
-        executionStatus: result.data,
+        executionStatus: execData,
       }));
     }
     setSending(false);
@@ -410,11 +443,10 @@ export default function ChatConsole() {
                   <div key={idx} className="space-y-2 animate-in fade-in duration-150">
                     <div className="flex items-center justify-between">
                       <span
-                        className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold ${
-                          turn.role === "user"
+                        className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold ${turn.role === "user"
                             ? "text-muted border-border-strong bg-white/5"
                             : "text-primary border-primary/40 bg-primary/10"
-                        }`}
+                          }`}
                       >
                         {turn.role === "user" ? "You" : "VEYRA Intelligence"}
                       </span>

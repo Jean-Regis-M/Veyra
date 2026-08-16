@@ -109,12 +109,25 @@ class SpCas9GeneCuttingSkill(Skill):
     @staticmethod
     def _records(control_plane: Any, request: dict[str, Any]) -> list[tuple[str | None, str]]:
         if request.get("sequence"):
-            return [(request.get("chrom"), "".join(request["sequence"].split()).upper())]
+            seq_str = "".join(request["sequence"].split()).upper()
+            if len(seq_str) > 25000:
+                seq_str = seq_str[:25000]
+                warnings_list = request.setdefault("_pre_warnings", [])
+                warnings_list.append("Input sequence exceeds 25,000 bp; analyzed the first 25,000 bp for candidate selection.")
+            return [(request.get("chrom"), seq_str)]
         input_id = request.get("input_id") or request.get("analysis_input_id") or request.get("analysis_input")
         item = control_plane.inputs.get_analysis_input(input_id)
         fmt = {"fasta": "fasta", "fastq": "fastq", "genbank": "genbank"}[item.detected_format]
         records = list(SeqIO.parse(StringIO(item._content.decode("utf-8")), fmt))
-        return [(record.id, str(record.seq).upper()) for record in records]
+        records_out = []
+        for record in records:
+            seq_str = str(record.seq).upper()
+            if len(seq_str) > 25000:
+                seq_str = seq_str[:25000]
+                warnings_list = request.setdefault("_pre_warnings", [])
+                warnings_list.append(f"Record '{record.id}' exceeds 25,000 bp; analyzed the first 25,000 bp.")
+            records_out.append((record.id, seq_str))
+        return records_out
 
     @staticmethod
     def _spacer_start(row: dict[str, Any], length: int = 20) -> int | None:
@@ -193,6 +206,7 @@ class SpCas9GeneCuttingSkill(Skill):
                                                        "chrom": chrom})
                 pam_results.append((result, sequence))
 
+        max_limit = min(request.get("max_candidates", 5), 5 if depth == "quick" else 50)
         for pam_result, sequence in pam_results:
             if pam_result.errors:
                 errors.extend(pam_result.errors)
@@ -202,7 +216,7 @@ class SpCas9GeneCuttingSkill(Skill):
                 row_dict = row if isinstance(row, dict) else row.model_dump()
                 if not row_dict.get("protospacer"):
                     continue
-                if len(candidates) >= request.get("max_candidates", 100):
+                if len(candidates) >= max_limit:
                     warnings.append("max_candidates reached; remaining PAM hits were not evaluated.")
                     break
                 candidate_id = f"candidate_{len(candidates) + 1}"
