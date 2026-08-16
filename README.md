@@ -20,7 +20,7 @@ Every score traces to a real, deterministic computation. An AI layer explains th
 [![Model Context Protocol](https://img.shields.io/badge/MCP-tool%20interface-6E56CF)](https://modelcontextprotocol.io/)
 [![OpenAI-compatible](https://img.shields.io/badge/LLM%20provider-OpenAI--compatible-412991?logo=openai&logoColor=white)](#environment-variables)
 [![ESLint](https://img.shields.io/badge/ESLint-9-4B32C3?logo=eslint&logoColor=white)](https://eslint.org/)
-[![License](https://img.shields.io/badge/license-unspecified-lightgrey)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Status](https://img.shields.io/badge/status-hackathon%20MVP-orange)](#known-limitations)
 [![Scope](https://img.shields.io/badge/research%20prototype-not%20for%20clinical%20use-red)](#scientific-integrity)
 
@@ -405,7 +405,9 @@ Real world case studies referenced on the landing page (see the app for full cit
 - [`docs/scientific-assumptions.md`](docs/scientific-assumptions.md) — deterministic engine scope and simplifications (historical, client engine only).
 
 ## License
- Apache-2.0
+
+MIT — see [`LICENSE`](LICENSE).
+
 ---
 
 <div align="center">
