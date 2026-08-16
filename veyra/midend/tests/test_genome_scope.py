@@ -13,7 +13,23 @@ from veyra.midend.ai.openai_compatible import OpenAICompatibleProvider
 from veyra.midend.ai.models import AIResponse
 
 
-ECOLI_FASTA_PATH = Path("/home/hrirake/Desktop/hck15/veyra/data/references/ecoli_k12/genome/GCF_000005845.2.fasta")
+def _resolve_ecoli_fasta() -> Path:
+    candidates = [
+        Path(__file__).resolve().parents[2] / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+        Path(__file__).resolve().parents[3] / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+        Path(__file__).resolve().parents[3] / "veyra" / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    try:
+        from veyra.backend.references import get_genome
+        return Path(get_genome("ecoli_k12_mg1655").fasta_path)
+    except Exception:
+        return candidates[0]
+
+
+ECOLI_FASTA_PATH = _resolve_ecoli_fasta()
 
 
 def test_1_large_fasta_default_quick_mode():

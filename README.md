@@ -23,14 +23,14 @@ Open separate terminal tabs or windows for each service.
 ### 1. Start the Backend (Port 8000)
 
 ```bash
-cd /home/hrirake/Desktop/hck15
-PYTHONPATH=veyra/backend ./veyra/backend/venv/bin/uvicorn veyra.backend.http_api.app:app --host 0.0.0.0 --port 8000 --reload
+# From repository root:
+PYTHONPATH=veyra:veyra/backend uvicorn backend.http_api.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-*Or from the backend directory:*
+*Or from the backend directory (`veyra/backend`):*
 ```bash
-cd /home/hrirake/Desktop/hck15/veyra/backend
-./venv/bin/uvicorn http_api.app:app --host 0.0.0.0 --port 8000 --reload
+cd veyra/backend
+uvicorn http_api.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 - **Health Check:** `curl http://localhost:8000/health`
@@ -41,8 +41,8 @@ cd /home/hrirake/Desktop/hck15/veyra/backend
 ### 2. Start the Midend (Port 8080)
 
 ```bash
-cd /home/hrirake/Desktop/hck15
-PYTHONPATH=. ./veyra/backend/venv/bin/uvicorn veyra.midend.http_api.app:app --host 0.0.0.0 --port 8080 --reload
+# From repository root:
+PYTHONPATH=.:veyra:veyra/backend uvicorn veyra.midend.http_api.app:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 - **Health Check:** `curl http://localhost:8080/health`
@@ -54,7 +54,6 @@ PYTHONPATH=. ./veyra/backend/venv/bin/uvicorn veyra.midend.http_api.app:app --ho
 ### 3. Start the Frontend (Port 3000)
 
 ```bash
-cd /home/hrirake/Desktop/hck15
 npm run dev
 ```
 
@@ -69,19 +68,17 @@ npm run dev
 
 ### Backend Full Regression Suite (425 Tests)
 ```bash
-cd /home/hrirake/Desktop/hck15/veyra/backend
-./venv/bin/pytest tests/ -v
+cd veyra/backend
+pytest tests/ -v
 ```
 
-### Midend Full Test Suite (35 Tests)
+### Midend Full Test Suite
 ```bash
-cd /home/hrirake/Desktop/hck15
-PYTHONPATH=. ./veyra/backend/venv/bin/pytest veyra/midend/tests/ -v
+PYTHONPATH=.:veyra:veyra/backend pytest veyra/midend/tests/ -v
 ```
 
 ### Frontend Type-Checking & Linting
 ```bash
-cd /home/hrirake/Desktop/hck15
 npm run lint
 npm run build
 ```

@@ -1,9 +1,9 @@
 # VEYRA Midend Feature Status Report
 
 **Date:** 2026-08-16  
-**Reference Document:** `/home/hrirake/Desktop/hck15/veyra/midend/integration.md`  
-**Midend Codebase:** `/home/hrirake/Desktop/hck15/veyra/midend/`  
-**Backend Codebase:** `/home/hrirake/Desktop/hck15/veyra/backend/`  
+**Reference Document:** `veyra/midend/integration.md`  
+**Midend Codebase:** `veyra/midend/`  
+**Backend Codebase:** `veyra/backend/`  
 **Status:** Backend & Midend are **FROZEN**; transitioning to Frontend/UI development.
 
 ---

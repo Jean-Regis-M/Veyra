@@ -13,17 +13,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Base paths
-_HCK15 = Path("/home/hrirake/Desktop/hck15")
-_VEYRA_BACKEND = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_VEYRA_BACKEND = Path(__file__).resolve().parent.parent
 _REFERENCES_DIR = _VEYRA_BACKEND / "references"
-_CACHE_DIR = _VEYRA_BACKEND / "cache"
-_DATA_DIR = _VEYRA_BACKEND / "data"
+_CACHE_DIR = Path(os.environ.get("VEYRA_CACHE_DIR", str(_VEYRA_BACKEND / "cache")))
+_VEYRA_ROOT = Path(os.environ.get("VEYRA_ROOT", str(_VEYRA_BACKEND.parent)))
+_DATA_DIR = Path(os.environ.get("VEYRA_DATA_DIR", str(_VEYRA_ROOT / "data")))
 
 # CRISPOR CFD scoring resources
 # Primary: VEYRA-local copy under data/resources/crispor_cfd/
 # Fallback: refrences.local (read-only reference infrastructure)
-_VEYRA_ROOT = _VEYRA_BACKEND.parent  # veyra/ root
-_CFD_LOCAL = _VEYRA_ROOT / "data" / "resources" / "crispor_cfd"
+_CFD_LOCAL = _DATA_DIR / "resources" / "crispor_cfd"
 _CFD_REFLOCAL = _VEYRA_ROOT / "refrences.local" / "data" / "benchmarks" / "crisporPaper" / "CFD_Scoring"
 
 CRISPOR_CFD_DIR = _CFD_LOCAL if (_CFD_LOCAL / "mismatch_score.pkl").is_file() else _CFD_REFLOCAL
@@ -78,12 +77,62 @@ class GenomeConfig:
 _GENOMES: dict[str, GenomeConfig] = {}
 
 
+def _find_candidate_file(rel_paths: list[Path | str]) -> Path | None:
+    """Find first existing file from candidate relative or absolute paths."""
+    for p in rel_paths:
+        path_obj = Path(p) if not isinstance(p, Path) else p
+        if path_obj.is_file():
+            return path_obj
+    return None
+
+
+def _get_reference_search_roots() -> list[Path]:
+    """Get candidate base directories for external reference genome files."""
+    roots: list[Path] = []
+    for env_var in ["GENOME_REFERENCES_DIR", "VEYRA_REFERENCES_DIR", "HCK15_REFS_DIR"]:
+        val = os.environ.get(env_var)
+        if val:
+            roots.append(Path(val))
+    roots.extend([
+        _DATA_DIR,
+        _DATA_DIR / "references",
+        _VEYRA_ROOT / "data" / "references",
+        _VEYRA_ROOT / "refrences.local",
+        _VEYRA_ROOT / "refrences",
+        _VEYRA_ROOT / "references",
+        _VEYRA_ROOT.parent / "refrences",
+        _VEYRA_ROOT.parent / "references",
+        _VEYRA_ROOT.parent / "data" / "references",
+        _VEYRA_ROOT.parent / "veyra" / "data" / "references",
+    ])
+    # Deduplicate while preserving order
+    seen: set[Path] = set()
+    deduped: list[Path] = []
+    for r in roots:
+        resolved = r.resolve() if r.exists() else r
+        if resolved not in seen:
+            seen.add(resolved)
+            deduped.append(r)
+    return deduped
+
+
 def _register_defaults() -> None:
-    """Register known reference genomes from the hck15 environment."""
+    """Register known reference genomes from deployment environment."""
+    ref_roots = _get_reference_search_roots()
 
     # GRCh38.p14 — full assembly
-    grch38_fna = _HCK15 / "refrences" / "refs" / "ncbi_dataset" / "data" / "GCF_000001405.40" / "GCF_000001405.40_GRCh38.p14_genomic.fna"
-    if grch38_fna.is_file():
+    grch38_env = os.environ.get("GRCH38_FASTA_PATH")
+    grch38_candidates: list[Path | str] = []
+    if grch38_env:
+        grch38_candidates.append(grch38_env)
+    for root in ref_roots:
+        grch38_candidates.extend([
+            root / "refs" / "ncbi_dataset" / "data" / "GCF_000001405.40" / "GCF_000001405.40_GRCh38.p14_genomic.fna",
+            root / "ncbi_dataset" / "data" / "GCF_000001405.40" / "GCF_000001405.40_GRCh38.p14_genomic.fna",
+            root / "GRCh38.p14" / "GCF_000001405.40_GRCh38.p14_genomic.fna",
+        ])
+    grch38_fna = _find_candidate_file(grch38_candidates)
+    if grch38_fna:
         fai = str(grch38_fna) + ".fai"
         _GENOMES["GRCh38.p14"] = GenomeConfig(
             genome_id="GRCh38.p14",
@@ -95,8 +144,17 @@ def _register_defaults() -> None:
         )
 
     # GRCh38 chr1 test region
-    chr1_test = _HCK15 / "refrences" / "refs" / "grch38_chr1_test.fasta"
-    if chr1_test.is_file():
+    chr1_env = os.environ.get("GRCH38_CHR1_TEST_PATH")
+    chr1_candidates: list[Path | str] = []
+    if chr1_env:
+        chr1_candidates.append(chr1_env)
+    for root in ref_roots:
+        chr1_candidates.extend([
+            root / "refs" / "grch38_chr1_test.fasta",
+            root / "grch38_chr1_test.fasta",
+        ])
+    chr1_test = _find_candidate_file(chr1_candidates)
+    if chr1_test:
         fai = str(chr1_test) + ".fai"
         _GENOMES["GRCh38_chr1_test"] = GenomeConfig(
             genome_id="GRCh38_chr1_test",
@@ -107,8 +165,18 @@ def _register_defaults() -> None:
         )
 
     # CIRCLE-seq test genome
-    circle_fna = _HCK15 / "refrences" / "data" / "tools" / "changeseq" / "test" / "data" / "input" / "CIRCLEseq_test_genome.fa"
-    if circle_fna.is_file():
+    circle_env = os.environ.get("CIRCLESEQ_TEST_PATH")
+    circle_candidates: list[Path | str] = []
+    if circle_env:
+        circle_candidates.append(circle_env)
+    for root in ref_roots:
+        circle_candidates.extend([
+            root / "data" / "tools" / "changeseq" / "test" / "data" / "input" / "CIRCLEseq_test_genome.fa",
+            root / "tools" / "changeseq" / "test" / "data" / "input" / "CIRCLEseq_test_genome.fa",
+            root / "CIRCLEseq_test_genome.fa",
+        ])
+    circle_fna = _find_candidate_file(circle_candidates)
+    if circle_fna:
         fai = str(circle_fna) + ".fai"
         _GENOMES["CIRCLEseq_test"] = GenomeConfig(
             genome_id="CIRCLEseq_test",
@@ -120,8 +188,18 @@ def _register_defaults() -> None:
         )
 
     # Guide-seq test genome / chr19
-    guideseq_fa = _HCK15 / "refrences" / "data" / "tools" / "guideseq" / "test" / "test_genome.fa"
-    if guideseq_fa.is_file():
+    guideseq_env = os.environ.get("GUIDESEQ_TEST_PATH")
+    guideseq_candidates: list[Path | str] = []
+    if guideseq_env:
+        guideseq_candidates.append(guideseq_env)
+    for root in ref_roots:
+        guideseq_candidates.extend([
+            root / "data" / "tools" / "guideseq" / "test" / "test_genome.fa",
+            root / "tools" / "guideseq" / "test" / "test_genome.fa",
+            root / "test_genome.fa",
+        ])
+    guideseq_fa = _find_candidate_file(guideseq_candidates)
+    if guideseq_fa:
         fai = str(guideseq_fa) + ".fai"
         _GENOMES["guideseq_test"] = GenomeConfig(
             genome_id="guideseq_test",
@@ -132,8 +210,24 @@ def _register_defaults() -> None:
         )
 
     # E. coli K-12 MG1655 (integration test genome)
-    ecoli_fa = _HCK15 / "veyra" / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta"
-    if ecoli_fa.is_file():
+    ecoli_env = os.environ.get("ECOLI_FASTA_PATH")
+    ecoli_candidates: list[Path | str] = []
+    if ecoli_env:
+        ecoli_candidates.append(ecoli_env)
+    for root in ref_roots:
+        ecoli_candidates.extend([
+            root / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+            root / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+            root / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+        ])
+    ecoli_candidates.extend([
+        _DATA_DIR / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+        _VEYRA_ROOT / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+        _VEYRA_ROOT.parent / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+        _VEYRA_ROOT.parent / "veyra" / "data" / "references" / "ecoli_k12" / "genome" / "GCF_000005845.2.fasta",
+    ])
+    ecoli_fa = _find_candidate_file(ecoli_candidates)
+    if ecoli_fa:
         fai = str(ecoli_fa) + ".fai"
         _GENOMES["ecoli_k12_mg1655"] = GenomeConfig(
             genome_id="ecoli_k12_mg1655",

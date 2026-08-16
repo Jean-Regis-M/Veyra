@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from pathlib import Path
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -195,14 +196,18 @@ def compute_contract_hash() -> str:
     """Compute sha256 checksum of midend.md and tool definitions for cache invalidation."""
     hasher = hashlib.sha256()
     # Check midend.md if it exists
+    base_dir = Path(__file__).resolve().parent
     possible_contract_paths = [
-        os.path.join(os.path.dirname(__file__), "..", "..", "midend.md"),
-        os.path.join(os.path.dirname(__file__), "..", "midend.md"),
-        "/home/hrirake/Desktop/hck15/veyra/midend.md",
+        os.environ.get("MIDEND_CONTRACT_PATH"),
+        os.environ.get("VEYRA_MIDEND_CONTRACT_PATH"),
+        str(base_dir.parent.parent / "midend.md"),
+        str(base_dir.parent / "midend.md"),
+        str(base_dir.parent.parent.parent / "midend.md"),
+        str(base_dir.parent.parent.parent / "veyra" / "midend.md"),
     ]
     contract_bytes = b""
     for p in possible_contract_paths:
-        if os.path.isfile(p):
+        if p and os.path.isfile(p):
             try:
                 with open(p, "rb") as f:
                     contract_bytes = f.read()

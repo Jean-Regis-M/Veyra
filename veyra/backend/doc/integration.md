@@ -3,7 +3,7 @@
 ## 1. Project Setup
 
 ```bash
-cd /home/hrirake/Desktop/hck15/veyra/backend
+cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install biopython numpy fastapi uvicorn httpx pytest
@@ -36,7 +36,7 @@ pip install biopython numpy fastapi uvicorn httpx pytest
 Reference genomes are configured in `references/__init__.py`.
 
 **CFD Scoring Resources:**
-- Path: `/home/hrirake/Desktop/hck15/refrences/data/benchmarks/crisporPaper/CFD_Scoring/`
+- Path: `data/resources/crispor_cfd/`
 - Files: `mismatch_score.pkl`, `pam_scores.pkl`
 - Status: Copied to `data/resources/crispor_cfd/`
 
@@ -99,7 +99,8 @@ python veyra.py --input file.fasta --pam
 
 ```python
 import sys
-sys.path.insert(0, '/home/hrirake/Desktop/hck15/veyra/backend')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api import (
     pam_scan_raw,

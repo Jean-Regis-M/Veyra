@@ -2,18 +2,18 @@
 
 **Date:** 2026-08-16  
 **Status:** **FROZEN**  
-**Workspace:** `/home/hrirake/Desktop/hck15/veyra/`  
-**Backend:** `/home/hrirake/Desktop/hck15/veyra/backend/`  
-**Midend:** `/home/hrirake/Desktop/hck15/veyra/midend/`  
-**Machine Contract:** `/home/hrirake/Desktop/hck15/veyra/midend.md`  
-**Integration Contract:** `/home/hrirake/Desktop/hck15/veyra/midend/integration.md`  
+**Workspace:** `veyra/`  
+**Backend:** `veyra/backend/`  
+**Midend:** `veyra/midend/`  
+**Machine Contract:** `veyra/midend.md`  
+**Integration Contract:** `veyra/midend/integration.md`  
 
 ---
 
 ## 1. Environment
 
 - **OS/Platform:** Linux (x86_64, Linux 6.8.0-52-generic)
-- **Python:** 3.12.3 (`/home/hrirake/Desktop/hck15/veyra/backend/venv/bin/python3`)
+- **Python:** 3.12.3 (`backend/venv/bin/python3`)
 - **Pytest:** 9.1.1 (Pluggy 1.6.0, AnyIO 4.14.2)
 - **Core Scientific Dependencies:**
   - NumPy: 2.5.2

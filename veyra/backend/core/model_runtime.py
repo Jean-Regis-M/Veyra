@@ -30,8 +30,8 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 _VEYRA_DIR = os.path.dirname(_BACKEND_DIR)
-_MODEL_ENVS_DIR = os.path.join(_VEYRA_DIR, "data", "model_envs")
-_STATE_DIR = os.path.join(_BACKEND_DIR, "cache", "model_runtime")
+_MODEL_ENVS_DIR = os.environ.get("VEYRA_MODEL_ENVS_DIR", os.path.join(_VEYRA_DIR, "data", "model_envs"))
+_STATE_DIR = os.environ.get("VEYRA_MODEL_RUNTIME_STATE_DIR", os.path.join(_BACKEND_DIR, "cache", "model_runtime"))
 _LOCK_DIR = os.path.join(_STATE_DIR, "locks")
 _STATE_FILE = os.path.join(_STATE_DIR, "runtimes.json")
 
@@ -168,7 +168,18 @@ def _load_state() -> dict[str, RuntimeInfo]:
     try:
         with open(_STATE_FILE, "r") as f:
             data = json.load(f)
-        return {k: RuntimeInfo.from_dict(v) for k, v in data.items()}
+        state: dict[str, RuntimeInfo] = {}
+        for k, v in data.items():
+            info = RuntimeInfo.from_dict(v)
+            expected_path = get_model_runtime_path(k)
+            # If path doesn't exist or belonged to another filesystem, normalize to current expected path if provisioned
+            if info.runtime_path and (not os.path.exists(info.runtime_path) or info.runtime_path != expected_path):
+                if os.path.exists(expected_path):
+                    info.runtime_path = expected_path
+                elif not os.path.isabs(info.runtime_path):
+                    info.runtime_path = os.path.join(_MODEL_ENVS_DIR, info.runtime_path)
+            state[k] = info
+        return state
     except Exception:
         return {}
 

@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-cd /home/hrirake/Desktop/hck15/veyra/backend
+cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -144,7 +144,8 @@ python -m mcp.server invoke <tool_name> --args-json '{"param": "value"}'
 
 ```python
 import sys
-sys.path.insert(0, '/home/hrirake/Desktop/hck15/veyra/backend')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api import (
     pam_scan_raw,

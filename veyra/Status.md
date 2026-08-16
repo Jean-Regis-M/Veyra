@@ -24,7 +24,7 @@ The authoritative details are in `backend/FINAL_COMPLETE_REPORT.md`.
 ## Verification Metadata
 
 - **Verification Date:** 2026-08-15
-- **Workspace:** `/home/hrirake/Desktop/hck15/veyra/backend`
+- **Workspace:** `veyra/backend`
 - **Python Version:** 3.12.3
 - **Test Framework:** pytest 9.1.1
 - **Test Command:** `python -m pytest tests/ -v`

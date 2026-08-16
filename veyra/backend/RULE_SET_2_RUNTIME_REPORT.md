@@ -1,7 +1,7 @@
 # Rule Set 2 / Azimuth Legacy Runtime Implementation Report
 
 **Date:** 2026-08-15  
-**Workspace:** `/home/hrirake/Desktop/hck15/veyra/backend`  
+**Workspace:** `veyra/backend`  
 **Python Version:** 3.12.3  
 **Test Framework:** pytest 9.1.1  
 **Total Tests:** 406 passed, 6 skipped, 7 warnings  
@@ -29,7 +29,7 @@ VEYRA now supports a **three-environment architecture** with complete Rule Set 2
 
 ### 1.1 Azimuth 2.0 Requirements (From Source)
 
-**Source:** `/home/hrirake/Desktop/hck15/veyra/refrences.local/data/tools/crisporWebsite/bin/Azimuth-2.0/`
+**Source:** `refrences.local/data/tools/crisporWebsite/bin/Azimuth-2.0/`
 
 **setup.py Requirements:**
 ```python
@@ -577,7 +577,7 @@ $ python -m pytest tests/ -q
 
 ### 15.3 Files Modified
 
-**Only within `/home/hrirake/Desktop/hck15/veyra/`:**
+**Only within `veyra/`:**
 
 1. **`backend/core/model_runtime.py`** - Added runtime discovery and Conda provisioning
 2. **`backend/core/model_registry.py`** - Updated Rule Set 2 specification

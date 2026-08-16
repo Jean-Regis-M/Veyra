@@ -68,7 +68,7 @@ Known PAM sites in chr1:
 - `mismatch_score.pkl` — Mismatch penalty scores
 - `pam_scores.pkl` — PAM efficiency scores
 
-Source: `/home/hrirake/Desktop/hck15/refrences/data/benchmarks/crisporPaper/CFD_Scoring/`
+Source: `data/resources/crispor_cfd/` (or external `refrences.local/data/benchmarks/crisporPaper/CFD_Scoring/`)
 
 ## Usage
 
