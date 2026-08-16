@@ -27,13 +27,25 @@ export function Header({ online = true }: HeaderProps) {
           href="/"
           className="flex items-center gap-2.5 font-display text-sm font-semibold tracking-wide text-foreground hover:opacity-90 transition-opacity"
         >
-          <span
-            className={`h-2.5 w-2.5 rounded-full ${
-              online === false
-                ? "bg-risk-high shadow-[0_0_8px_rgba(248,113,113,0.8)]"
-                : "veyra-pulse-dot bg-primary shadow-[0_0_10px_rgba(56,189,248,0.8)]"
-            }`}
-          />
+          <span className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+            {/* plain <img>, not next/image: local SVGs need images.dangerouslyAllowSVG
+                to go through the optimizer, which isn't worth enabling for one icon */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/veyra-icon.svg"
+              alt="VEYRA"
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-[9px] shadow-[0_2px_10px_rgba(74,63,143,0.35)]"
+            />
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0a0d16] ${
+                online === false
+                  ? "bg-risk-high shadow-[0_0_8px_rgba(248,113,113,0.8)]"
+                  : "veyra-pulse-dot bg-primary shadow-[0_0_10px_rgba(56,189,248,0.8)]"
+              }`}
+            />
+          </span>
           <span className="tracking-wider font-bold">VEYRA</span>
           <span className="hidden sm:inline font-mono text-[10px] text-muted/70 tracking-widest uppercase border-l border-border/60 pl-2">
             Genomic Intelligence
