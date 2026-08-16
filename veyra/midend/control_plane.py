@@ -22,9 +22,17 @@ def register_secret(value: str | None) -> None:
         _KNOWN_SECRETS.add(value.strip())
 
 try:
+    from .ai.conversation_compaction import ConversationCompactor
     from .ai.errors import AIProviderError, AIProviderNotConfiguredError
+    from .ai.evidence_compaction import compact_evidence, format_compact_evidence_for_ai
     from .ai.models import AIMessage
     from .ai.openai_compatible import OpenAICompatibleProvider
+    from .ai.tool_catalog import (
+        generate_compact_tool_directory,
+        get_active_tool_schemas,
+        get_tool_catalog,
+        select_active_tool_names,
+    )
     from .ai.tool_definitions import analyze_parameters_meta, get_native_tools
     from .config.ai_provider import AIConfigError, AIProviderConfig, get_ai_config, get_ai_config_manager, validate_config
     from .config.settings import get_settings
@@ -32,9 +40,17 @@ try:
     from .input_validation import InputRegistry, MIDENDInputError
     from .skills.registry import get_skill
 except ImportError:  # pragma: no cover
+    from ai.conversation_compaction import ConversationCompactor
     from ai.errors import AIProviderError, AIProviderNotConfiguredError
+    from ai.evidence_compaction import compact_evidence, format_compact_evidence_for_ai
     from ai.models import AIMessage
     from ai.openai_compatible import OpenAICompatibleProvider
+    from ai.tool_catalog import (
+        generate_compact_tool_directory,
+        get_active_tool_schemas,
+        get_tool_catalog,
+        select_active_tool_names,
+    )
     from ai.tool_definitions import analyze_parameters_meta, get_native_tools
     from config.ai_provider import AIConfigError, AIProviderConfig, get_ai_config, get_ai_config_manager, validate_config
     from config.settings import get_settings
@@ -301,6 +317,7 @@ class ExecutionState:
                 "assistant_output": self.assistant_output, "deterministic_evidence": safe_value(self.deterministic_evidence),
                 "skill_result": safe_value(self.skill_result),
                 "tool_calls": [c.public() for c in self.tool_calls],
+                "parallel_groups": safe_value(self.parallel_groups),
                 "errors": self.errors, "warnings": self.warnings}
 
 
@@ -335,15 +352,28 @@ class ConversationStore:
 class PromptBuilder:
     """Builds labeled public prompt context; never stores hidden reasoning."""
 
+    def __init__(self, compactor: ConversationCompactor | None = None):
+        self.compactor = compactor or ConversationCompactor(max_recent_turns=4)
+
     def build(self, *, system_instructions: str, developer_context: str | None,
               history: list[dict[str, str]], user_message: str,
-              tool_results: list[dict[str, Any]] | None = None) -> list[AIMessage]:
+              tool_results: list[dict[str, Any]] | None = None,
+              session_metadata: dict[str, Any] | None = None) -> list[AIMessage]:
         messages = [AIMessage(role="system", content=system_instructions)]
         if developer_context:
             messages.append(AIMessage(role="system", content=f"DEVELOPER CONTEXT:\n{developer_context}"))
-        messages.extend(AIMessage(role=m["role"], content=m["content"]) for m in history)
+        
+        compacted_history = self.compactor.compact_history(history, session_metadata=session_metadata)
+        messages.extend(AIMessage(role=m["role"], content=m["content"]) for m in compacted_history)
+        
         if tool_results:
-            messages.append(AIMessage(role="system", content=f"TOOL-PRODUCED EVIDENCE:\n{safe_value(tool_results)}"))
+            # Inject compact representation of pre-existing evidence
+            compact_ev = [
+                compact_evidence(r.get("tool", "unknown"), r, execution_id=r.get("execution_id"))
+                if isinstance(r, dict) else str(r)
+                for r in tool_results
+            ]
+            messages.append(AIMessage(role="system", content=f"TOOL-PRODUCED EVIDENCE:\n{safe_value(compact_ev)}"))
         messages.append(AIMessage(role="user", content=user_message))
         return messages
 
@@ -702,6 +732,9 @@ class ControlPlane:
             raw_message = request.get("message", "")
 
             input_summaries = []
+            analysis_input_meta = None
+            calibration_input_meta = None
+
             if execution.validated_inputs:
                 for item_meta in execution.validated_inputs:
                     item_id = item_meta.get("input_id")
@@ -709,19 +742,22 @@ class ControlPlane:
                         try:
                             val_item = self.inputs.get(item_id)
                             if val_item.input_class == "analysis_input":
-                                text = val_item._content[:10000].decode("utf-8", errors="replace")
+                                analysis_input_meta = val_item
+                                text = val_item._content[:2000].decode("utf-8", errors="replace")
                                 lines = text.split("\n")
                                 first_line = lines[0] if lines else ""
                                 clean_seq = "".join(line.strip() for line in lines if line.strip() and not line.startswith(">"))
-                                preview = clean_seq[:600]
+                                preview = clean_seq[:200]
                                 input_summaries.append(
-                                    f"[Attached Genomic Target File: {val_item.filename} (Format: {val_item.detected_format}, Total Size: {val_item.size_bytes:,} bytes, Header: {first_line})]\n"
-                                    f"Target Sequence (5' to 3', first {len(preview)} bp):\n{preview}\n\n"
-                                    f"MANDATORY INSTRUCTION: When asked to find PAM sites, analyze CRISPR candidates, or determine properties of this attached target, invoke the native tools (pam_scan or spcas9_gene_cutting) on this target sequence."
+                                    f"[Attached Genomic Analysis Target: input_id='{val_item.input_id}', filename='{val_item.filename}', format='{val_item.detected_format}', size={val_item.size_bytes:,} bytes, header='{first_line}']\n"
+                                    f"Target Sequence Preview (5' to 3', first {len(preview)} bp):\n{preview}\n"
+                                    f"INSTRUCTION: Use spcas9_gene_cutting (with input_id='{val_item.input_id}') or pam_scan to compute deterministic evidence on this target sequence."
                                 )
                             elif val_item.input_class == "calibration_input":
+                                calibration_input_meta = val_item
                                 input_summaries.append(
-                                    f"[Attached Calibration Dataset: {val_item.filename} (Format: {val_item.detected_format}, Samples: {val_item.row_count}, Columns: {', '.join(val_item.columns or [])})]"
+                                    f"[Attached Calibration Dataset: input_id='{val_item.input_id}', filename='{val_item.filename}', format='{val_item.detected_format}', samples={val_item.row_count}, columns={', '.join(val_item.columns or [])}]\n"
+                                    f"INSTRUCTION: Use model_calibration (with calibration_input_id='{val_item.input_id}') to run deterministic model fitting on this dataset."
                                 )
                         except Exception:
                             pass
@@ -732,18 +768,23 @@ class ControlPlane:
                 else raw_message
             )
 
+            compact_tool_dir = generate_compact_tool_directory()
             system_instructions = (
                 "You are VEYRA — VEYRA Intelligence, an interpretable genomic intelligence engine for CRISPR/Cas9 guide design, sequence analysis, "
-                "and empirical model calibration. You have access to VEYRA's native deterministic calculation tools (pam_scan, compute_cut_site, "
-                "compute_gc_content, compute_melting_temp, compute_secondary_structure, check_homopolymer_runs, compute_positional_features, "
-                "compute_dinucleotide_composition, compute_seed_gc, offtarget_search, score_offtargets, rank_candidates, predict_ontarget_efficiency, "
-                "and spcas9_gene_cutting skill).\n\n"
+                "and empirical model calibration.\n\n"
+                f"{compact_tool_dir}\n\n"
                 "MANDATORY TOOL USE RULE:\n"
-                "Whenever the user asks to find PAM sites, design/evaluate CRISPR guides, calculate properties (GC, Tm, cut sites, homopolymers), "
-                "or analyze a target sequence or attached file, you MUST call the appropriate native tool (such as pam_scan, compute_gc_content, "
-                "or spcas9_gene_cutting) to obtain real deterministic evidence before giving your final answer. If an attached sequence excerpt is provided, "
-                "pass it to the tool arguments. Ground all biological decisions in deterministic tool results and established literature."
+                "Whenever the user asks to find PAM sites, design/evaluate CRISPR guides, calculate sequence properties (GC, Tm, cut sites, homopolymers), "
+                "search off-target loci, evaluate toxicity risk, or calibrate models, you MUST invoke the appropriate native tool or skill to obtain "
+                "real deterministic evidence before providing your final answer. Ground all biological claims directly in deterministic tool evidence."
             )
+
+            session_metadata = {
+                "analysis_input_id": analysis_input_meta.input_id if analysis_input_meta else None,
+                "analysis_filename": analysis_input_meta.filename if analysis_input_meta else None,
+                "calibration_input_id": calibration_input_meta.input_id if calibration_input_meta else None,
+                "active_skill": getattr(execution, "skill_result", {}).get("skill") if isinstance(execution.skill_result, dict) else None,
+            }
 
             messages = self.prompt_builder.build(
                 system_instructions=system_instructions,
@@ -751,9 +792,23 @@ class ControlPlane:
                 history=history,
                 user_message=effective_user_message,
                 tool_results=execution.deterministic_evidence,
+                session_metadata=session_metadata,
             )
 
-            native_tools = get_native_tools()
+            active_input_class = (
+                "calibration_input" if calibration_input_meta
+                else ("analysis_input" if analysis_input_meta else None)
+            )
+
+            catalog = get_tool_catalog()
+            active_tool_names = set(select_active_tool_names(
+                user_task=raw_message,
+                active_skill=session_metadata["active_skill"],
+                input_class=active_input_class,
+                catalog=catalog,
+            ))
+            active_native_tools = catalog.get_native_schemas(list(active_tool_names))
+
             turn = 0
             max_turns = 6
             response = None
@@ -761,7 +816,7 @@ class ControlPlane:
             while turn < max_turns:
                 turn += 1
                 response = await OpenAICompatibleProvider(record.config).generate(
-                    messages, execution.model, tools=native_tools
+                    messages, execution.model, tools=active_native_tools
                 )
                 req.usage = response.usage
                 req.finish_reason = response.finish_reason
@@ -786,13 +841,22 @@ class ControlPlane:
                         except Exception:
                             fn_args = {}
 
+                        # Dynamically expand active schemas if an unlisted tool was called
+                        if fn_name and fn_name not in active_tool_names:
+                            active_tool_names.add(fn_name)
+                            tool_entry = catalog.get_tool(fn_name)
+                            if tool_entry:
+                                active_native_tools.append(tool_entry.schema)
+
                         call_res = await self._run_call(execution, {
                             "call_id": tc_id,
                             "tool": fn_name,
                             "arguments": fn_args,
                         })
 
-                        tool_content = format_tool_result_for_ai(fn_name, call_res)
+                        tool_content = format_compact_evidence_for_ai(
+                            fn_name, call_res, call_id=tc_id, execution_id=execution.execution_id
+                        )
                         messages.append(
                             AIMessage(
                                 role="tool",

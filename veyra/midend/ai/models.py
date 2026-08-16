@@ -23,7 +23,7 @@ class AIRequest(BaseModel):
 
 
 class AIResponse(BaseModel):
-    content: str
+    content: Optional[str] = ""
     model: str
     provider: str = "openai_compatible"
     tool_calls: Optional[list[dict[str, Any]]] = None

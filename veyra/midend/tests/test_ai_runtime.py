@@ -68,3 +68,69 @@ def test_configured_provider_call_is_measured():
         assert response.latency_ms >= 0
         assert "secret" not in response.model_dump_json()
     asyncio.run(run())
+
+
+def test_multi_turn_native_tool_loop_with_evidence():
+    from veyra.midend.control_plane import control_plane
+    from veyra.midend.config.ai_provider import get_ai_config_manager
+    from veyra.midend.ai.models import AIResponse
+
+    async def run():
+        get_ai_config_manager().configure(
+            base_url="https://example.com/v1", api_key="secret_test_key", model="model"
+        )
+        try:
+            control_plane.providers.add(
+                provider_id="test_provider", provider_type="openai_compatible",
+                base_url="https://example.com/v1", api_key="secret_test_key",
+                models=["model"], default_model="model",
+            )
+        except Exception:
+            pass
+        control_plane.providers.select("test_provider", "model")
+
+        # Mock provider multi-turn response: Turn 1 triggers tool_call 'pam_scan', Turn 2 gives final explanation
+        turn1_resp = AIResponse(
+            content=None,
+            model="model",
+            finish_reason="tool_calls",
+            tool_calls=[{
+                "id": "call_pam_123",
+                "type": "function",
+                "function": {
+                    "name": "pam_scan",
+                    "arguments": json.dumps({"sequence": "ATGCGATCGATCGATCGATCGATCGATCGATCGATCGATCG"}),
+                },
+            }],
+            usage={"prompt_tokens": 350, "completion_tokens": 40, "total_tokens": 390},
+        )
+
+        turn2_resp = AIResponse(
+            content="I scanned the sequence and identified 3 candidate SpCas9 target sites.",
+            model="model",
+            finish_reason="stop",
+            tool_calls=None,
+            usage={"prompt_tokens": 420, "completion_tokens": 35, "total_tokens": 455},
+        )
+
+        with patch.object(OpenAICompatibleProvider, "generate", AsyncMock(side_effect=[turn1_resp, turn2_resp])):
+            exec_state = control_plane.create_execution({
+                "ai_request": {"message": "Find SpCas9 PAM sites in ATGCGATCGATCGATCGATCGATCGATCGATCGATCGATCG"},
+            })
+
+            # Wait for execution to finish
+            for _ in range(50):
+                if exec_state.status in {"completed", "failed"}:
+                    break
+                await asyncio.sleep(0.05)
+
+            if exec_state.status == "failed":
+                print("EXECUTION ERRORS:", exec_state.errors)
+            assert exec_state.status == "completed"
+            assert "identified 3 candidate" in (exec_state.assistant_output or "")
+            assert len(exec_state.tool_calls) == 1
+            assert exec_state.tool_calls[0].tool == "pam_scan"
+            assert exec_state.tool_calls[0].status == "completed"
+
+    asyncio.run(run())
+
