@@ -38,6 +38,46 @@ VEYRA runs as three independently deployable services with no shared database:
 
 MIDEND never computes biology itself — it calls the backend's real HTTP tools and has an LLM interpret the results. Full architecture detail, data-flow diagrams, and an API inventory: [`docs/ARCHITECTURE_ACTUAL.md`](docs/ARCHITECTURE_ACTUAL.md) and [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md).
 
+```mermaid
+flowchart TB
+    subgraph Frontend["Frontend — Next.js 16 / React 19 (port 3000)"]
+        Landing["/  Landing page"]
+        Analyze["/analyze  Sequence paste + file upload"]
+        Chat["/chat  AI conversational analysis"]
+        Raw["/raw  Direct backend console"]
+        GenomicEngine["Client-side heuristic engine\n(instant candidate discovery)"]
+        Helix["3D DNA visualization\nReact Three Fiber"]
+    end
+
+    subgraph Midend["MIDEND — FastAPI / Python (port 8080)"]
+        ControlPlane["Control plane\nconversations, executions, prompt building"]
+        Skills["Skills:\nspcas9_gene_cutting\nofftarget_toxicity_risk\nmodel_calibration"]
+        Connector["Connector\nHTTP or MCP to backend"]
+    end
+
+    subgraph Backend["Backend — FastAPI / Python (port 8000)"]
+        HttpApi["27 REST endpoints"]
+        Tools["18 deterministic tools\nPAM · CFD · Doench 2014 / RS2 / RS3 · Tm · GC"]
+        Parsers["FASTA / FASTQ / GenBank parsers"]
+    end
+
+    LLM[("External LLM provider\nOpenAI-compatible")]
+
+    Analyze -->|paste| GenomicEngine
+    Analyze -->|"upload / scored request"| HttpApi
+    Analyze --> Helix
+    Landing --> Helix
+
+    Chat -->|"session, message, file attach"| ControlPlane
+    ControlPlane --> Skills --> Connector --> HttpApi
+    ControlPlane --> LLM
+
+    Raw -->|"1:1 passthrough"| HttpApi
+
+    HttpApi --> Tools
+    Tools --> Parsers
+```
+
 ### Running locally
 
 Each service runs in its own terminal.
