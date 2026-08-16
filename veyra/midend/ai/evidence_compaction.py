@@ -78,6 +78,8 @@ def compact_evidence(
                 "pam": c.get("pam"),
                 "strand": c.get("strand"),
                 "cut_site": c.get("cut_site"),
+                "guide_gc_content": c.get("features", {}).get("gc", {}).get("summary", {}).get("gc_content")
+                if isinstance(c.get("features"), dict) else None,
                 "gc_content": c.get("features", {}).get("gc", {}).get("summary", {}).get("gc_content")
                 if isinstance(c.get("features"), dict) else None,
                 "ontarget_score": c.get("ontarget", {}).get("score")
@@ -145,7 +147,10 @@ def compact_evidence(
     if tool_name == "compute_gc_content":
         evidence["gc_content"] = res_dict.get("gc_content") or res_dict.get("summary", {}).get("gc_content")
         evidence["gc_count"] = res_dict.get("gc_count") or res_dict.get("summary", {}).get("gc_count")
-        evidence["sequence_length"] = res_dict.get("sequence_length") or res_dict.get("summary", {}).get("length")
+        evidence["sequence_length"] = res_dict.get("sequence_length") or res_dict.get("summary", {}).get("sequence_length") or res_dict.get("summary", {}).get("length")
+        evidence["gc_5prime"] = res_dict.get("summary", {}).get("gc_5prime")
+        evidence["gc_3prime"] = res_dict.get("summary", {}).get("gc_3prime")
+        evidence["passes_basic_filter"] = res_dict.get("summary", {}).get("passes_basic_filter")
         evidence["sliding_window_min"] = res_dict.get("sliding_window_min") or res_dict.get("summary", {}).get("sliding_window_min")
         evidence["sliding_window_max"] = res_dict.get("sliding_window_max") or res_dict.get("summary", {}).get("sliding_window_max")
         return evidence

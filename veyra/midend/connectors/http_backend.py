@@ -115,7 +115,7 @@ class HTTPBackendConnector(BackendConnector):
             )
         raise ToolNotFoundError(tool_name, "http")
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> ToolExecutionResult:
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any], timeout: Optional[float] = None) -> ToolExecutionResult:
         if tool_name not in TOOL_ENDPOINT_MAP:
             raise ToolNotFoundError(tool_name, "http")
 
@@ -138,8 +138,10 @@ class HTTPBackendConnector(BackendConnector):
         if tool_name == "cas_offinder_search":
             args["backend"] = "cas_offinder"
 
+        call_timeout = timeout if timeout is not None else self.timeout
+
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=call_timeout) as client:
                 if method == "GET":
                     res = await client.get(url, params=args, headers=self.headers)
                 else:
@@ -173,7 +175,7 @@ class HTTPBackendConnector(BackendConnector):
                 )
 
         except httpx.TimeoutException:
-            raise ConnectorTimeoutError(tool_name, self.timeout)
+            raise ConnectorTimeoutError(tool_name, call_timeout)
         except httpx.HTTPStatusError as e:
             raise ToolExecutionError(tool_name, f"HTTP Error {e.response.status_code}: {e.response.text}")
         except Exception as e:
