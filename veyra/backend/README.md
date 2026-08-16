@@ -156,7 +156,7 @@ python -m pytest tests/test_interfaces.py -v  # interface parity tests
 ## To run backend 
 ```bash
 cd backend
-uvicorn http_api.app:app --host 127.0.0.1 --port 8000 --reload
+uvicorn http_api.app:app --host 127.0.0.1 --port 8000 --ws none --reload
 
 Backend URL: http://127.0.0.1:8000
 API docs: http://127.0.0.1:8000/docs

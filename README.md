@@ -24,13 +24,13 @@ Open separate terminal tabs or windows for each service.
 
 ```bash
 # From repository root:
-PYTHONPATH=veyra:veyra/backend uvicorn backend.http_api.app:app --host 0.0.0.0 --port 8000 --reload
+PYTHONPATH=veyra:veyra/backend uvicorn backend.http_api.app:app --host 0.0.0.0 --port 8000 --ws none --reload
 ```
 
 *Or from the backend directory (`veyra/backend`):*
 ```bash
 cd veyra/backend
-uvicorn http_api.app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn http_api.app:app --host 0.0.0.0 --port 8000 --ws none --reload
 ```
 
 - **Health Check:** `curl http://localhost:8000/health`
@@ -42,7 +42,7 @@ uvicorn http_api.app:app --host 0.0.0.0 --port 8000 --reload
 
 ```bash
 # From repository root:
-PYTHONPATH=.:veyra:veyra/backend uvicorn veyra.midend.http_api.app:app --host 0.0.0.0 --port 8080 --reload
+PYTHONPATH=.:veyra:veyra/backend uvicorn veyra.midend.http_api.app:app --host 0.0.0.0 --port 8080 --ws none --reload
 ```
 
 - **Health Check:** `curl http://localhost:8080/health`
