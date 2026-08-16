@@ -111,6 +111,5 @@ Real-world case studies referenced on the landing page (see the app for full cit
 
 - [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — full technical audit: architecture, API inventory, dependencies, testing, known limitations.
 - [`docs/ARCHITECTURE_ACTUAL.md`](docs/ARCHITECTURE_ACTUAL.md) — system diagrams and data flow.
-- [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) — recommended demo flow.
 - [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) — what's real, what's heuristic, what's not implemented.
 - [`docs/scientific-assumptions.md`](docs/scientific-assumptions.md) — deterministic-engine scope and simplifications.
