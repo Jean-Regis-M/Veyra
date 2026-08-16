@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MessageSquare, ArrowRight } from "lucide-react";
+import { MessageSquare, ArrowRight, Upload, Loader2 } from "lucide-react";
 import DnaHelixModel from "@/components/dna/HelixModel";
 import { Header } from "@/components/Header";
 import { analyzeSequence, GenomicEngineResult, GuideCandidate } from "@/lib/genomic-engine";
@@ -280,7 +280,7 @@ export default function AnalyzeClient() {
               />
               {error && <p className="text-sm text-risk-high">{error}</p>}
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => runAnalysis(sequence)}
                   className="rounded-full bg-linear-to-r from-primary to-secondary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
@@ -299,8 +299,13 @@ export default function AnalyzeClient() {
                     {ex.label}
                   </button>
                 ))}
-                <label className="rounded-full border border-border px-4 py-2.5 text-xs text-muted hover:border-primary/40 hover:text-foreground transition-colors cursor-pointer">
-                  {uploading ? "Parsing…" : "Upload FASTA / FASTQ / GenBank"}
+                <label
+                  aria-label="Upload FASTA, FASTQ, or GenBank file"
+                  title="Upload FASTA / FASTQ / GenBank"
+                  className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-4 text-xs font-medium text-primary hover:bg-primary/15 hover:border-primary/60 transition-colors cursor-pointer"
+                >
+                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  <span>{uploading ? "Parsing…" : "Upload"}</span>
                   <input
                     type="file"
                     accept=".fa,.fasta,.fna,.faa,.fq,.fastq,.gb,.gbk,.gbff,.genbank"
