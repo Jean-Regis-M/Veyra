@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Sparkles, Dna } from "lucide-react";
 
@@ -28,15 +29,15 @@ export function Header({ online = true }: HeaderProps) {
           className="flex items-center gap-2.5 font-display text-sm font-semibold tracking-wide text-foreground hover:opacity-90 transition-opacity"
         >
           <span className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-            {/* plain <img>, not next/image: local SVGs need images.dangerouslyAllowSVG
-                to go through the optimizer, which isn't worth enabling for one icon */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/veyra-icon.svg"
+            {/* public/icon.png — repo-root brand asset, served at the site root by
+                Next's public/ convention; priority since it's always above the fold */}
+            <Image
+              src="/icon.png"
               alt="VEYRA"
               width={32}
               height={32}
-              className="h-8 w-8 rounded-[9px] shadow-[0_2px_10px_rgba(74,63,143,0.35)]"
+              priority
+              className="h-8 w-8 rounded-[9px] object-cover shadow-[0_2px_10px_rgba(74,63,143,0.35)]"
             />
             <span
               className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0a0d16] ${
