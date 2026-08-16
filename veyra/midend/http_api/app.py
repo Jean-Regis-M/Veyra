@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover - compatibility for the existing source 
 
 class AIConfigRequest(BaseModel):
     base_url: str = Field(..., min_length=1)
-    api_key: str = Field(..., min_length=1)
+    api_key: str = ""
     model: str = Field(..., min_length=1)
     persist: bool = False
 
@@ -44,7 +44,7 @@ class AIProviderRequest(BaseModel):
     provider_id: str = Field(..., min_length=1)
     type: str = "openai_compatible"
     base_url: str = Field(..., min_length=1)
-    api_key: str = Field(..., min_length=1)
+    api_key: str = ""
     models: list[str] = Field(default_factory=list)
     default_model: str = Field(..., min_length=1)
     persist: bool = False
@@ -124,10 +124,13 @@ class SkillExecutionBody(BaseModel):
 
 app = FastAPI(title="VEYRA MIDEND", version="0.1.0")
 
-# Frontend (Next.js dev server) calls this API directly from the browser.
+# Frontend (Next.js dev server and the deployed Vercel app) calls this API
+# directly from the browser. allow_origin_regex covers Vercel's per-deploy
+# preview URLs (veyra-<hash>-stealthwhiz.vercel.app), not just production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://veyra-genomic-intelligence.vercel.app"],
+    allow_origin_regex=r"https://veyra-.*-stealthwhiz\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )

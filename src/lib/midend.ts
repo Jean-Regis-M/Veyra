@@ -8,7 +8,11 @@
  * real response or a typed failure.
  */
 
-const MIDEND_URL = process.env.NEXT_PUBLIC_VEYRA_MIDEND_URL ?? "http://localhost:8080";
+// Browser calls route through /api/proxy/midend by default — see the same
+// rationale in src/lib/backend.ts (avoids mixed-content + CORS on an
+// https:// deployment talking to an http:// service). Set
+// NEXT_PUBLIC_VEYRA_MIDEND_URL to bypass the proxy for local dev.
+const MIDEND_URL = process.env.NEXT_PUBLIC_VEYRA_MIDEND_URL ?? "/api/proxy/midend";
 
 export type MidendResult<T> = { ok: true; data: T } | { ok: false; error: string };
 

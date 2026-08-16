@@ -20,7 +20,7 @@ Every score traces to a real, deterministic computation. An AI layer explains th
 [![Model Context Protocol](https://img.shields.io/badge/MCP-tool%20interface-6E56CF)](https://modelcontextprotocol.io/)
 [![OpenAI-compatible](https://img.shields.io/badge/LLM%20provider-OpenAI--compatible-412991?logo=openai&logoColor=white)](#environment-variables)
 [![ESLint](https://img.shields.io/badge/ESLint-9-4B32C3?logo=eslint&logoColor=white)](https://eslint.org/)
-[![License](https://img.shields.io/badge/license-unspecified-lightgrey)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Status](https://img.shields.io/badge/status-hackathon%20MVP-orange)](#known-limitations)
 [![Scope](https://img.shields.io/badge/research%20prototype-not%20for%20clinical%20use-red)](#scientific-integrity)
 
@@ -32,6 +32,7 @@ Every score traces to a real, deterministic computation. An AI layer explains th
 
 - [Overview](#overview)
 - [The problem](#the-problem)
+  - [Research validating the problem](#research-validating-the-problem)
 - [The solution](#the-solution)
 - [Tech stack & tags](#tech-stack--tags)
 - [Architecture](#architecture)
@@ -66,6 +67,18 @@ It is built as **three independently deployable services**, with no shared datab
 ## The problem
 
 Off-target CRISPR risk is real and documented, not hypothetical — published trials have detected unintended genomic events in edited patient cells (see [References](#references)). Yet the tools researchers commonly reach for hand back a single opaque probability from a short sequence window, with no way to see what algorithm produced it or why. When something needs scrutiny — a detected translocation, an unexpected off-target hit — there's often no trail back to the underlying computation.
+
+### Research validating the problem
+
+CRISPR precision is improving — but unintended genomic changes remain measurable, and they go well beyond simple mismatch-based off-targets:
+
+| | | |
+|---|---|---|
+| **9.9%** | **6%** | **47** |
+| Chromosome 7 truncation observed in primary human T cells edited with CRISPR-Cas9 (chromosome 14 loss in up to 9% of cells in the same study). | Structural variants ≥50 bp among editing outcomes in a zebrafish study of 1,100+ founder larvae, long-read sequenced; some changes were inherited across generations. | Bona fide off-target loci identified by TOPO-seq across three therapeutic gRNAs in hematopoietic stem cells; 6 were specifically induced by DNA topology, and most of those had 6 mismatches — sites mismatch-focused approaches can miss. |
+| [*Nature Biotechnology*, 2022](https://www.nature.com/articles/s41587-022-01377-0) | [*Nature Communications*, 2022](https://www.nature.com/articles/s41467-022-28244-5) | [*Nature Chemical Biology*, 2025](https://www.nature.com/articles/s41589-025-01867-7) |
+
+**The problem isn't only "off-target = mismatch."** Recent research shows unintended outcomes can include large deletions, chromosome loss, translocations, and other structural variants — meaning genomic safety assessment needs to look beyond simple sequence similarity ([*Nature Communications*, 2025](https://www.nature.com/articles/s41467-025-62606-z)). Not all off-target events carry the same clinical risk, and interpreting which ones matter is itself an open problem ([*Nature Genetics*, 2025](https://www.nature.com/articles/s41588-025-02428-3)).
 
 ## The solution
 
@@ -397,6 +410,14 @@ Real world case studies referenced on the landing page (see the app for full cit
 - *PubMed Central (PMC) / Nature* — first-in-human CRISPR-Cas9 T cell cancer trial.
 - ICMR/DBT guidelines; the ART Act — India's current gene editing regulatory framework.
 
+Research validating the scale of unintended genomic changes (see [Research validating the problem](#research-validating-the-problem) above):
+
+- Nahmad, A.D. *et al.* (2022). [*Frequent aneuploidy in primary human T cells after CRISPR–Cas9 cleavage.*](https://www.nature.com/articles/s41587-022-01377-0) *Nature Biotechnology.*
+- Rasys, A.M. *et al.* (2022). [*CRISPR-Cas9 induces large structural variants at on-target and off-target sites in vivo that segregate across generations.*](https://www.nature.com/articles/s41467-022-28244-5) *Nature Communications.*
+- (2025). [*TOPO-seq reveals DNA topology-induced off-target activity by Cas9 and base editors.*](https://www.nature.com/articles/s41589-025-01867-7) *Nature Chemical Biology.*
+- (2025). [*The hidden risks of CRISPR/Cas: structural variations and genome integrity.*](https://www.nature.com/articles/s41467-025-62606-z) *Nature Communications.*
+- (2025). [*Measurement and clinical interpretation of CRISPR off-targets.*](https://www.nature.com/articles/s41588-025-02428-3) *Nature Genetics.*
+
 ### Further documentation
 
 - [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — full technical audit: architecture, API inventory, dependencies, testing, known limitations.
@@ -405,7 +426,9 @@ Real world case studies referenced on the landing page (see the app for full cit
 - [`docs/scientific-assumptions.md`](docs/scientific-assumptions.md) — deterministic engine scope and simplifications (historical, client engine only).
 
 ## License
- Apache-2.0
+
+MIT — see [`LICENSE`](LICENSE).
+
 ---
 
 <div align="center">

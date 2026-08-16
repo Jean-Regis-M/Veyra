@@ -100,3 +100,5 @@ veyra/cache/
 veyra/backend/cache/model_runtime/
 .env*
 !.env.example
+.vercel
+.env*.local

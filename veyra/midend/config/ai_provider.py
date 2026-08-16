@@ -29,7 +29,7 @@ class AIProviderConfig:
 
     @property
     def configured(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.base_url and self.model)
 
     def status(self) -> dict[str, Any]:
         return {
@@ -38,7 +38,7 @@ class AIProviderConfig:
             "model": self.model,
             "configured": self.configured,
             "source": self.source,
-            "api_key_configured": self.configured,
+            "api_key_configured": bool(self.api_key),
         }
 
 
@@ -48,9 +48,6 @@ def validate_config(base_url: str, api_key: str | None, model: str) -> None:
         raise AIConfigError("base_url must be a valid HTTP or HTTPS URL")
     if not (model or "").strip():
         raise AIConfigError("model must be non-empty")
-    # Empty keys are allowed at startup, but not by an explicit configuration call.
-    if api_key is not None and not api_key.strip():
-        raise AIConfigError("api_key must be non-empty when supplied")
 
 
 def _dotenv_values(path: Path) -> dict[str, str]:
@@ -95,12 +92,13 @@ class AIProviderConfigManager:
         ) else "default"
         return AIProviderConfig(base_url, api_key, model, source=source)
 
-    def configure(self, *, base_url: str, api_key: str, model: str, persist: bool = False) -> AIProviderConfig:
+    def configure(self, *, base_url: str, api_key: str = "", model: str, persist: bool = False) -> AIProviderConfig:
         if persist:
             raise AIConfigError("plaintext API-key persistence is disabled")
-        base_url, model, api_key = base_url.strip(), model.strip(), api_key.strip()
-        validate_config(base_url, api_key, model)
-        self._runtime = AIProviderConfig(base_url, api_key, model, source="runtime")
+        base_url, model = base_url.strip(), model.strip()
+        api_key_val = api_key.strip() if api_key else None
+        validate_config(base_url, api_key_val, model)
+        self._runtime = AIProviderConfig(base_url, api_key_val, model, source="runtime")
         if persist:
             self.save_dotenv(self._runtime)
         return self._runtime

@@ -28,6 +28,6 @@ class BackendConnector(ABC):
         pass
 
     @abstractmethod
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> ToolExecutionResult:
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any], timeout: float | None = None) -> ToolExecutionResult:
         """Execute a backend tool call with arguments and return full VeyraResult structure."""
         pass

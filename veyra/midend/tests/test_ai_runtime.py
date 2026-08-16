@@ -26,7 +26,8 @@ def test_startup_without_key_and_safe_status(api_client, monkeypatch, tmp_path):
         get_ai_config_manager().clear_runtime()
         async with api_client as client:
             response = await client.get("/ai/config")
-            assert response.json()["configured"] is False
+            assert response.json()["configured"] is True
+            assert response.json()["api_key_configured"] is False
             assert "api_key" not in response.json() or response.json()["api_key"] is None
             chat = await client.post("/ai/chat", json={"message": "hello"})
             assert chat.status_code == 200
@@ -133,4 +134,36 @@ def test_multi_turn_native_tool_loop_with_evidence():
             assert exec_state.tool_calls[0].status == "completed"
 
     asyncio.run(run())
+
+
+def test_keyless_adc_provider_call():
+    async def run():
+        config = AIProviderConfigManager().configure(
+            base_url="https://example.com/v1", api_key="", model="gemini-pro"
+        )
+        assert config.configured is True
+        assert config.api_key is None
+
+        fake = MagicMock()
+        fake.status_code = 200
+        fake.json.return_value = {"id": "req_adc", "model": "gemini-pro", "choices": [
+            {"message": {"content": "OK from ADC"}, "finish_reason": "stop"}
+        ]}
+        with patch("httpx.AsyncClient") as client_cls:
+            client = client_cls.return_value
+            client.__aenter__.return_value = client
+            client.post = AsyncMock(return_value=fake)
+            provider = OpenAICompatibleProvider(config)
+            response = await provider.generate([AIMessage(role="user", content="hello")])
+            
+            # Verify Authorization header was handled without error and call succeeded
+            client.post.assert_called_once()
+            call_kwargs = client.post.call_args.kwargs
+            assert "headers" in call_kwargs
+            assert "Content-Type" in call_kwargs["headers"]
+
+        assert response.content == "OK from ADC"
+        assert response.model == "gemini-pro"
+    asyncio.run(run())
+
 

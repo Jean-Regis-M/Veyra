@@ -134,15 +134,17 @@ class MCPBackendConnector(BackendConnector):
                 raw_response={"error": str(e)},
             )
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> ToolExecutionResult:
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any], timeout: Optional[float] = None) -> ToolExecutionResult:
         if tool_name not in self._registry:
             raise ToolNotFoundError(tool_name, "mcp")
+
+        call_timeout = timeout if timeout is not None else self.timeout
 
         try:
             result = await asyncio.wait_for(
                 asyncio.to_thread(self._execute_sync, tool_name, arguments),
-                timeout=self.timeout,
+                timeout=call_timeout,
             )
             return result
         except asyncio.TimeoutError:
-            raise ConnectorTimeoutError(tool_name, self.timeout)
+            raise ConnectorTimeoutError(tool_name, call_timeout)

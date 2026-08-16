@@ -548,7 +548,9 @@ export default function AnalyzeClient() {
               {reasoningLoading && <p className="text-sm text-muted">Generating explanation…</p>}
               {!reasoningLoading && reasoning && (
                 <div className="space-y-3">
-                  <p className="text-sm text-foreground/90 whitespace-pre-line">{reasoning.summary}</p>
+                  {reasoning.source === "ai" && (
+                    <p className="text-sm text-foreground/90 whitespace-pre-line">{reasoning.summary}</p>
+                  )}
                   <div className="pt-2 border-t border-border/30 flex items-center justify-between">
                     <span className="text-[11px] font-mono text-muted/70">
                       {reasoning.source === "ai" ? "Grounded AI Co-Pilot analysis" : "Deterministic preview"}
