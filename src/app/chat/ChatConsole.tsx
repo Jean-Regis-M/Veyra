@@ -535,31 +535,54 @@ export default function ChatConsole() {
 
               {/* Attached File Chip (Pending Send) */}
               {attachedFile && (
-                <div className="veyra-glass px-3.5 py-1.5 flex items-center justify-between text-xs font-mono text-foreground border-primary/30">
-                  <div className="flex items-center gap-2 truncate">
-                    {attachedFile.input_class === "calibration_input" ? (
-                      <FileSpreadsheet size={15} className="text-secondary shrink-0" />
-                    ) : (
-                      <FileCode size={15} className="text-primary shrink-0" />
-                    )}
-                    <span className="truncate font-semibold">{attachedFile.filename}</span>
-                    <span className="rounded bg-primary/20 text-primary px-1.5 py-0.2 text-[9px] uppercase">
-                      {attachedFile.detected_format}
-                    </span>
-                    <span className="text-[10px] text-muted">
-                      {attachedFile.input_class === "calibration_input"
-                        ? `${attachedFile.sample_count || attachedFile.row_count} rows`
-                        : `${attachedFile.record_count} records`}
-                    </span>
+                <div className="space-y-1.5">
+                  <div className="veyra-glass px-3.5 py-1.5 flex items-center justify-between text-xs font-mono text-foreground border-primary/30">
+                    <div className="flex items-center gap-2 truncate">
+                      {attachedFile.input_class === "calibration_input" ? (
+                        <FileSpreadsheet size={15} className="text-secondary shrink-0" />
+                      ) : (
+                        <FileCode size={15} className="text-primary shrink-0" />
+                      )}
+                      <span className="truncate font-semibold">{attachedFile.filename}</span>
+                      <span className="rounded bg-primary/20 text-primary px-1.5 py-0.2 text-[9px] uppercase">
+                        {attachedFile.detected_format}
+                      </span>
+                      <span className="text-[10px] text-muted">
+                        {attachedFile.input_class === "calibration_input"
+                          ? `${attachedFile.sample_count || attachedFile.row_count} rows`
+                          : `${attachedFile.size_bytes ? (attachedFile.size_bytes / 1024).toFixed(1) + " KB" : attachedFile.record_count + " records"}`}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAttachedFile(null)}
+                      className="text-muted hover:text-foreground p-1"
+                      title="Remove attachment"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setAttachedFile(null)}
-                    className="text-muted hover:text-foreground p-1"
-                    title="Remove attachment"
-                  >
-                    <X size={14} />
-                  </button>
+
+                  {/* Scope Selector for Large Genomic Files */}
+                  {attachedFile.input_class === "analysis_input" && (attachedFile.size_bytes ?? 0) > 25000 && (
+                    <div className="flex items-center gap-2 text-[11px] font-mono px-1">
+                      <span className="text-muted text-[10px] uppercase">Scope Choice:</span>
+                      <button
+                        type="button"
+                        onClick={() => void send("Find candidate SpCas9 cutting sites (quick scan first 25 kb)")}
+                        className="rounded border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20 transition-colors"
+                      >
+                        ⚡ Quick Scan (First 25 kb)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void send("Scan the entire genome without truncation for SpCas9 cutting sites (full scan)")}
+                        className="rounded border border-border/60 bg-black/40 px-2 py-0.5 text-muted hover:text-foreground hover:border-secondary transition-colors"
+                      >
+                        🧬 Whole Genome Full Scan
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -59,6 +59,18 @@ def compact_evidence(
         evidence["total_candidates"] = len(cands)
         evidence["returned_count"] = min(len(cands), max_items)
         evidence["has_more"] = len(cands) > max_items
+        evidence["analysis_scope"] = res_dict.get("analysis_scope", "whole_sequence")
+        evidence["full_input_length"] = res_dict.get("full_input_length")
+        evidence["analyzed_length"] = res_dict.get("analyzed_length")
+        evidence["truncated"] = res_dict.get("truncated", False)
+        evidence["quick_mode"] = res_dict.get("quick_mode", False)
+        if res_dict.get("scope_warning"):
+            evidence["scope_warning"] = res_dict.get("scope_warning")
+            evidence["scope_instruction"] = (
+                "Genome-scale input was bounded to the first 25,000 bp for quick analysis. "
+                "In your final response, explicitly state that a quick scan of the first 25 kb was performed "
+                "and that this is not an exhaustive whole-genome ranking."
+            )
         evidence["top_candidates"] = [
             {
                 "rank": c.get("rank"),

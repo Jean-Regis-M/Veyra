@@ -107,27 +107,72 @@ class SpCas9GeneCuttingSkill(Skill):
             warnings_list.append("Full analysis requested without genome_id; performed quick in-sequence analysis.")
 
     @staticmethod
-    def _records(control_plane: Any, request: dict[str, Any]) -> list[tuple[str | None, str]]:
+    def _records(control_plane: Any, request: dict[str, Any]) -> tuple[list[tuple[str | None, str]], dict[str, Any]]:
+        scope_param = str(request.get("analysis_scope") or request.get("scope") or request.get("depth", "quick")).lower()
+        is_full_scan = scope_param in {"full", "whole_genome", "all"}
+
         if request.get("sequence"):
-            seq_str = "".join(request["sequence"].split()).upper()
-            if len(seq_str) > 25000:
-                seq_str = seq_str[:25000]
+            raw_seq = "".join(request["sequence"].split()).upper()
+            full_len = len(raw_seq)
+            if full_len > 25000 and not is_full_scan:
+                seq_str = raw_seq[:25000]
+                truncated = True
+                quick_mode = True
+                scope = "first_25000_bp"
+                warn = "Genome-scale input was bounded to the first 25,000 bp for quick analysis. This result is not a whole-genome scan."
                 warnings_list = request.setdefault("_pre_warnings", [])
-                warnings_list.append("Input sequence exceeds 25,000 bp; analyzed the first 25,000 bp for candidate selection.")
-            return [(request.get("chrom"), seq_str)]
+                warnings_list.append(warn)
+            else:
+                seq_str = raw_seq
+                truncated = False
+                quick_mode = not is_full_scan
+                scope = "full_genome" if is_full_scan and full_len > 25000 else "whole_sequence"
+                warn = None
+
+            scope_info = {
+                "analysis_scope": scope,
+                "full_input_length": full_len,
+                "analyzed_length": len(seq_str),
+                "truncated": truncated,
+                "quick_mode": quick_mode,
+                "warning": warn,
+            }
+            return [(request.get("chrom"), seq_str)], scope_info
+
         input_id = request.get("input_id") or request.get("analysis_input_id") or request.get("analysis_input")
         item = control_plane.inputs.get_analysis_input(input_id)
         fmt = {"fasta": "fasta", "fastq": "fastq", "genbank": "genbank"}[item.detected_format]
         records = list(SeqIO.parse(StringIO(item._content.decode("utf-8")), fmt))
         records_out = []
+        total_full_len = sum(len(r.seq) for r in records)
+        total_analyzed_len = 0
+        any_truncated = False
+        scope_warn = None
+
         for record in records:
-            seq_str = str(record.seq).upper()
-            if len(seq_str) > 25000:
-                seq_str = seq_str[:25000]
+            raw_seq = str(record.seq).upper()
+            full_len = len(raw_seq)
+            if full_len > 25000 and not is_full_scan:
+                seq_str = raw_seq[:25000]
+                any_truncated = True
+                scope_warn = "Genome-scale input was bounded to the first 25,000 bp for quick analysis. This result is not a whole-genome scan."
                 warnings_list = request.setdefault("_pre_warnings", [])
-                warnings_list.append(f"Record '{record.id}' exceeds 25,000 bp; analyzed the first 25,000 bp.")
+                if scope_warn not in warnings_list:
+                    warnings_list.append(scope_warn)
+            else:
+                seq_str = raw_seq
+            total_analyzed_len += len(seq_str)
             records_out.append((record.id, seq_str))
-        return records_out
+
+        scope_info = {
+            "analysis_scope": "first_25000_bp" if any_truncated else ("full_genome" if is_full_scan and total_full_len > 25000 else "whole_sequence"),
+            "full_input_length": total_full_len,
+            "analyzed_length": total_analyzed_len,
+            "truncated": any_truncated,
+            "quick_mode": not is_full_scan,
+            "warning": scope_warn,
+        }
+        return records_out, scope_info
 
     @staticmethod
     def _spacer_start(row: dict[str, Any], length: int = 20) -> int | None:
@@ -189,7 +234,7 @@ class SpCas9GeneCuttingSkill(Skill):
                 return {"skill": self.metadata.skill_id, "status": "failed", "candidates": [],
                         "warnings": [], "errors": genome.errors}
 
-        records = self._records(control_plane, request) if not is_region else [(request.get("chrom"), "")]
+        records, scope_info = self._records(control_plane, request) if not is_region else ([(request.get("chrom"), "")], {"analysis_scope": "genomic_region", "full_input_length": None, "analyzed_length": None, "truncated": False, "quick_mode": False, "warning": None})
 
         if is_region:
             pam_result = await call_tool("pam_scan_region", {
@@ -206,7 +251,9 @@ class SpCas9GeneCuttingSkill(Skill):
                                                        "chrom": chrom})
                 pam_results.append((result, sequence))
 
-        max_limit = min(request.get("max_candidates", 5), 5 if depth == "quick" else 50)
+        scope_param = str(request.get("analysis_scope") or request.get("scope") or request.get("depth", "quick")).lower()
+        is_full_scan = scope_param in {"full", "whole_genome", "all"}
+        max_limit = min(request.get("max_candidates", 50 if is_full_scan else 5), 100 if is_full_scan else 5)
         for pam_result, sequence in pam_results:
             if pam_result.errors:
                 errors.extend(pam_result.errors)
@@ -304,8 +351,19 @@ class SpCas9GeneCuttingSkill(Skill):
                 await emit("ranking_completed", candidate_count=len(candidates))
 
         status = "failed" if errors and not candidates else ("partial" if errors or warnings else "complete")
-        return {"skill": self.metadata.skill_id, "status": status, "candidates": candidates,
-                "warnings": warnings, "errors": errors}
+        return {
+            "skill": self.metadata.skill_id,
+            "status": status,
+            "analysis_scope": scope_info["analysis_scope"],
+            "full_input_length": scope_info["full_input_length"],
+            "analyzed_length": scope_info["analyzed_length"],
+            "truncated": scope_info["truncated"],
+            "quick_mode": scope_info["quick_mode"],
+            "scope_warning": scope_info.get("warning"),
+            "candidates": candidates,
+            "warnings": warnings,
+            "errors": errors,
+        }
 
 
 def _reverse_complement(sequence: str) -> str:

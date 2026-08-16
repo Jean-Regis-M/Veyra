@@ -485,6 +485,7 @@ NATIVE_TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                 "properties": {
                     "sequence": {"type": "string", "description": "Target DNA sequence to analyze"},
                     "input_id": {"type": "string", "description": "Optional input_id of uploaded FASTA/GenBank file"},
+                    "analysis_scope": {"type": "string", "enum": ["quick", "full"], "default": "quick", "description": "Scope of analysis: 'quick' bounds large genome-scale files to first 25 kb; 'full' scans the entire sequence/genome without truncation."},
                     "depth": {"type": "string", "enum": ["quick", "full"], "default": "quick"},
                     "strand": {"type": "string", "enum": ["both", "fwd", "rev"], "default": "both"},
                     "genome_id": {"type": "string", "description": "Genome ID for full off-target search"},

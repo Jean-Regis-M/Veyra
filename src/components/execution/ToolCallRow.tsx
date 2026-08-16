@@ -36,6 +36,11 @@ export function ToolCallRow({ call, defaultExpanded = false }: ToolCallRowProps)
   const warnings = (call.warnings ?? resultObj?.warnings ?? []) as string[];
   const errors = (call.errors ?? resultObj?.errors ?? []) as string[];
 
+  const analysisScope = resultObj?.analysis_scope as string | undefined;
+  const fullInputLength = resultObj?.full_input_length as number | undefined;
+  const analyzedLength = resultObj?.analyzed_length as number | undefined;
+  const scopeWarning = resultObj?.scope_warning as string | undefined;
+
   return (
     <div className="rounded-lg border border-border/50 bg-black/30 overflow-hidden transition-all">
       {/* Compact Header Row */}
@@ -196,6 +201,32 @@ export function ToolCallRow({ call, defaultExpanded = false }: ToolCallRowProps)
               <pre className="max-h-48 overflow-auto rounded border border-border/30 bg-black/60 p-2 font-mono text-[11px] text-foreground/90 whitespace-pre-wrap custom-scrollbar">
                 {JSON.stringify(rows, null, 2)}
               </pre>
+            </div>
+          )}
+
+          {/* Analysis Scope & Genomic Coverage (Whole Genome vs Quick Mode) */}
+          {analysisScope && (
+            <div className="rounded border border-primary/30 bg-primary/5 p-2.5 space-y-1.5 font-mono text-[11px]">
+              <div className="flex items-center justify-between">
+                <span className="text-muted uppercase text-[9px] font-semibold">Analysis Scope</span>
+                <span className="rounded px-1.5 py-0.2 text-[10px] font-semibold bg-primary/20 text-primary uppercase">
+                  {analysisScope === "first_25000_bp" ? "Quick Scan (First 25 kb)" : analysisScope}
+                </span>
+              </div>
+              {fullInputLength !== undefined && analyzedLength !== undefined && fullInputLength > 0 && (
+                <div className="flex items-center justify-between text-muted text-[10px]">
+                  <span>Genomic Coverage:</span>
+                  <span className="text-foreground font-medium veyra-readout">
+                    {analyzedLength.toLocaleString()} bp / {fullInputLength.toLocaleString()} bp (
+                    {((analyzedLength / fullInputLength) * 100).toFixed(1)}%)
+                  </span>
+                </div>
+              )}
+              {scopeWarning && (
+                <p className="text-[10px] text-risk-moderate bg-risk-moderate/10 p-1.5 rounded border border-risk-moderate/20 leading-relaxed">
+                  ⚠️ {scopeWarning}
+                </p>
+              )}
             </div>
           )}
 
