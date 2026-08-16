@@ -1,92 +1,116 @@
 # VEYRA — Genomic Intelligence
 
-> An end-to-end, interpretable CRISPR/Cas9 guide RNA design, off-target risk assessment, and empirical calibration pipeline.
+An interpretable CRISPR/Cas9 guide-RNA design and off-target risk-assessment platform. Every score traces to a real, deterministic computation; an AI layer explains the results but never invents them.
 
 ---
 
-## System Architecture
+## Overview
 
-The VEYRA system runs across three strictly layered tiers:
+VEYRA scores CRISPR guide-RNA candidates against a target DNA sequence — PAM discovery, on-target efficiency, off-target risk — and presents the results through an interactive 3D locus view and a conversational AI assistant. It's built as three independent services: a deterministic scientific backend, an AI-orchestration layer that calls that backend's real tools, and a Next.js frontend with three ways to use the engine (a guided analysis flow, a conversational chat, and a raw API console).
 
-| Tier | Component | Technology | Default Port | Description |
-|---|---|---|---|---|
-| **Frontend** | Web UI / Console | Next.js 16 (React 19, Tailwind CSS) | `http://localhost:3000` | Interactive guide RNA visualizer, sequence analyzer, and AI orchestration console. |
-| **Midend** | Orchestration & AI | FastAPI (Python 3.12) | `http://localhost:8080` | Boundary validation, SSE execution streaming, skill orchestration, and AI reasoning. |
-| **Backend** | Deterministic Core | FastAPI, BWA, Cas-OFFinder, ViennaRNA | `http://localhost:8000` | PAM discovery, cut-site geometry, sequence thermodynamics, CFD scoring, and off-target search. |
+Research prototype. Not for clinical or diagnostic use.
 
 ---
 
-## Quick Start — Turning On All Services
+## Problem
 
-Open separate terminal tabs or windows for each service.
+Off-target CRISPR risk is real and documented — not hypothetical. Published trials have detected unintended genomic events in edited patient cells (see [References](#references)), yet the tools researchers use to *predict* that risk typically hand back a single opaque probability from a short sequence window, with no way to see what algorithm produced it or why. When something needs scrutiny — a detected translocation, an unexpected off-target hit — there's often no trail back to the underlying computation.
 
-### 1. Start the Backend (Port 8000)
+## Solution
 
-```bash
-# From repository root:
-PYTHONPATH=veyra:veyra/backend uvicorn backend.http_api.app:app --host 0.0.0.0 --port 8000 --ws none --reload
-```
+VEYRA scores the *whole* provided locus, not a 20 bp window, and keeps every number traceable:
 
-*Or from the backend directory (`veyra/backend`):*
+- **Deterministic core** — PAM search, GC content, melting temperature, homopolymer runs, secondary structure, CFD off-target scoring (real CRISPOR data), and multi-model on-target prediction (Doench 2014 / Rule Set 2 / Rule Set 3) with a transparent fallback chain. Same input always produces the same output.
+- **AI reasoning, not AI computation** — the AI layer explains and contextualizes deterministic results; it never fabricates a score. Every AI-generated claim in the UI is either traced to a specific tool call or clearly labeled as interpretation.
+- **Interactive visualization** — a real-time 3D DNA structure and a live tool-call activity feed, so the AI's reasoning is auditable rather than a black box.
+
+---
+
+## Tech stack & architecture
+
+VEYRA runs as three independently deployable services with no shared database:
+
+| Tier | Component | Technology | Default port |
+|---|---|---|---|
+| **Frontend** | Web UI | Next.js 16, React 19, TypeScript, Tailwind CSS v4, React Three Fiber / three.js | `localhost:3000` |
+| **MIDEND** | AI orchestration | FastAPI (Python), tool-calling control plane, OpenAI-compatible LLM provider | `localhost:8080` |
+| **Backend** | Deterministic engine | FastAPI (Python), Biopython, CRISPOR CFD resources, Cas-OFFinder | `localhost:8000` |
+
+MIDEND never computes biology itself — it calls the backend's real HTTP tools and has an LLM interpret the results. Full architecture detail, data-flow diagrams, and an API inventory: [`docs/ARCHITECTURE_ACTUAL.md`](docs/ARCHITECTURE_ACTUAL.md) and [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md).
+
+### Running locally
+
+Each service runs in its own terminal.
+
+**Backend** (from `veyra/backend/`):
 ```bash
 cd veyra/backend
-uvicorn http_api.app:app --host 0.0.0.0 --port 8000 --ws none --reload
+python -m uvicorn http_api.app:app --host 0.0.0.0 --port 8000
 ```
+Health check: `curl http://localhost:8000/health`
 
-- **Health Check:** `curl http://localhost:8000/health`
-- **Swagger Docs:** `http://localhost:8000/docs`
-
----
-
-### 2. Start the Midend (Port 8080)
-
+**MIDEND** (from `veyra/` — its relative imports require this):
 ```bash
-# From repository root:
-PYTHONPATH=.:veyra:veyra/backend uvicorn veyra.midend.http_api.app:app --host 0.0.0.0 --port 8080 --ws none --reload
+cd veyra
+python -m uvicorn midend.http_api.app:app --host 0.0.0.0 --port 8080
 ```
+Health check: `curl http://localhost:8080/health`
 
-- **Health Check:** `curl http://localhost:8080/health`
-- **Skills Discovery:** `curl http://localhost:8080/skills`
-- **Swagger Docs:** `http://localhost:8080/docs`
-
----
-
-### 3. Start the Frontend (Port 3000)
-
+**Frontend**:
 ```bash
+npm install
 npm run dev
 ```
+Then open:
+- [`/`](http://localhost:3000) — landing page
+- [`/analyze`](http://localhost:3000/analyze) — paste or upload a sequence for ranked guide candidates
+- [`/chat`](http://localhost:3000/chat) — conversational, tool-orchestrated analysis
+- [`/raw`](http://localhost:3000/raw) — direct 1:1 access to every backend endpoint
 
-- **Web App:** Open [http://localhost:3000](http://localhost:3000) in your browser.
-- **Analysis Console:** [http://localhost:3000/analyze](http://localhost:3000/analyze)
-- **Midend Live Session:** [http://localhost:3000/midend](http://localhost:3000/midend)
-- **Raw API Explorer:** [http://localhost:3000/raw](http://localhost:3000/raw)
+### Tests
 
----
-
-## Running Automated Verification & Tests
-
-### Backend Full Regression Suite (425 Tests)
 ```bash
-cd veyra/backend
-pytest tests/ -v
-```
+# Backend
+cd veyra/backend && pytest tests/ -v
 
-### Midend Full Test Suite
-```bash
-PYTHONPATH=.:veyra:veyra/backend pytest veyra/midend/tests/ -v
-```
+# MIDEND (from veyra/)
+cd veyra && pytest midend/tests/ -v
 
-### Frontend Type-Checking & Linting
-```bash
+# Frontend — type-check and lint
 npm run lint
-npm run build
+npx tsc --noEmit
 ```
+
+Frontend currently has no automated test suite (see [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md)).
+
+### Input classes
+
+- **`analysis_input`** — FASTA, FASTQ, GenBank, or a raw DNA string, for standard guide-RNA analysis.
+- **`calibration_input`** — an optional labeled CSV/TSV dataset for fitting model coefficients against experimental data. Calibration is always optional; ordinary analysis never requires it.
 
 ---
 
-## Input Classes & Calibration
+## References
 
-- **`analysis_input`**: FASTA, FASTQ, GenBank, or raw DNA strings for standard CRISPR analysis workflows.
-- **`calibration_input`**: Optional CSV/TSV labeled experimental datasets for empirical model fitting.
-- **Critical Rule**: Calibration is strictly **optional**. Normal gene-cutting and PAM workflows never require calibration datasets.
+Scientific methods and resources VEYRA's deterministic engine is built on:
+
+- Doench, J.G. et al. (2016). *Optimized sgRNA design to maximize activity and minimize off-target effects of CRISPR-Cas9.* — CFD off-target scoring.
+- Doench, J.G. et al. (2014). *Rational design of highly active sgRNAs for CRISPR-Cas9–mediated gene inactivation.* — on-target efficiency (fallback model).
+- Doench, J.G. et al. (2021) / Rule Set 3 — on-target efficiency (primary model when available).
+- Bae, S. et al. — Cas-OFFinder, used for genome-scale off-target search.
+- CRISPOR (Haeussler, M. et al.) — source of the CFD scoring resource data.
+- Cock, P.J.A. et al. (2009). *Biopython: freely available Python tools for computational molecular biology and bioinformatics.*
+
+Real-world case studies referenced on the landing page (see the app for full citations and context):
+
+- New England Journal of Medicine — first-in-human CRISPR-Cas9 sickle-cell trial.
+- PubMed Central (PMC) / Nature — first-in-human CRISPR-Cas9 T-cell cancer trial.
+- ICMR/DBT guidelines; the ART Act — India's current gene-editing regulatory framework.
+
+### Further documentation
+
+- [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — full technical audit: architecture, API inventory, dependencies, testing, known limitations.
+- [`docs/ARCHITECTURE_ACTUAL.md`](docs/ARCHITECTURE_ACTUAL.md) — system diagrams and data flow.
+- [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) — recommended demo flow.
+- [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) — what's real, what's heuristic, what's not implemented.
+- [`docs/scientific-assumptions.md`](docs/scientific-assumptions.md) — deterministic-engine scope and simplifications.
