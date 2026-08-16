@@ -83,13 +83,17 @@ export function DnaAnalysisPanel({
       </button>
 
       {/* Slide-out panel — always mounted; a collapsing width wrapper does the
-          animation so nothing pops in/out abruptly. */}
+          animation so nothing pops in/out abruptly. Reflows the main column
+          (rather than overlaying it) so the session banner and header toggle
+          stay visible; a one-shot click-triggered transition on a single
+          element, not a scroll/drag-driven one, so width is fine here. */}
       <aside
+        aria-hidden={!isOpen}
         className={`veyra-panel-slide relative shrink-0 overflow-hidden border-l ${
-          isOpen ? "w-full lg:w-[420px] border-border/60 opacity-100" : "w-0 border-transparent opacity-0"
+          isOpen ? "w-full lg:w-105 border-border/60 opacity-100" : "w-0 border-transparent opacity-0"
         }`}
       >
-        <div className="relative w-full lg:w-[420px] h-full bg-black/70 backdrop-blur-xl p-4 space-y-4 max-h-[calc(100vh-5rem)] overflow-y-auto custom-scrollbar">
+        <div className="relative h-full w-full lg:w-105 bg-black/70 backdrop-blur-xl p-4 space-y-4 max-h-[calc(100vh-5rem)] overflow-y-auto custom-scrollbar">
           {/* Futuristic scan-line accent along the panel's leading edge */}
           <div className="pointer-events-none absolute left-0 top-0 h-24 w-px overflow-hidden">
             <div className="veyra-scan-sweep h-8 w-px bg-linear-to-b from-transparent via-primary to-transparent" />
@@ -235,7 +239,7 @@ export function DnaAnalysisPanel({
                       : "border-border/30 bg-black/30 text-muted hover:text-foreground hover:bg-white/5"
                   }`}
                 >
-                  <span className="truncate max-w-[200px]">
+                  <span className="truncate max-w-50">
                     {c.protospacer || c.sequence}
                   </span>
                   <span className="text-[10px] text-primary shrink-0">

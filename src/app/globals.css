@@ -165,8 +165,12 @@ mark {
 }
 
 /* Futuristic slide-out evidence panel — width/opacity choreographed together
-   so the content never reflows mid-transition (it stays full-width the whole
-   time, just clipped by the collapsing wrapper). */
+   so the content never pops in/out abruptly. Reflows the main chat column
+   rather than overlaying it, so nothing underneath gets hidden.
+   layout-transition: sanctioned exception — single click-triggered open/close
+   on one element, not a scroll/drag-driven animation; a transform-only
+   overlay drawer was tried and rejected because it covers the session
+   banner and the header's own toggle button. */
 .veyra-panel-slide {
   transition: width 480ms cubic-bezier(0.16, 1, 0.3, 1), opacity 380ms ease, border-color 480ms ease;
 }

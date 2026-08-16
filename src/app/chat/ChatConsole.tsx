@@ -9,7 +9,6 @@ import {
   FileSpreadsheet,
   AlertCircle,
   MessageSquare,
-  Dna,
   ArrowRight,
   BookOpen,
   Sparkles,
@@ -339,27 +338,14 @@ export default function ChatConsole() {
       <div className="mx-auto max-w-6xl w-full px-4 sm:px-6 flex-1 flex gap-6 mt-2">
         {/* Left / Main Conversation Area */}
         <div className="flex-1 flex flex-col min-w-0 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-display text-2xl font-semibold text-foreground flex items-center gap-2">
-                <MessageSquare size={22} className="text-primary" />
-                VEYRA Intelligence
-              </h1>
-              <p className="mt-1 text-xs sm:text-sm text-muted">
-                Grounded conversational AI orchestration over deterministic CRISPR PAM, cleavage geometry, and CFD algorithms.
-              </p>
-            </div>
-
-            {conversationId && (
-              <button
-                type="button"
-                onClick={() => setSidePanelOpen((v) => !v)}
-                className="hidden lg:inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-mono text-primary hover:bg-primary/20 transition-colors cursor-pointer"
-              >
-                <Dna size={14} />
-                <span>{sidePanelOpen ? "Hide DNA Panel" : "Show DNA Panel"}</span>
-              </button>
-            )}
+          <div>
+            <h1 className="font-display text-2xl font-semibold text-foreground flex items-center gap-2">
+              <MessageSquare size={22} className="text-primary" />
+              VEYRA Intelligence
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-muted">
+              Grounded conversational AI orchestration over deterministic CRISPR PAM, cleavage geometry, and CFD algorithms.
+            </p>
           </div>
 
           {!conversationId ? (
