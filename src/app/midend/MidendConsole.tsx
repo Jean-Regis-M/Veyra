@@ -17,12 +17,16 @@ import {
   SkillMetadata,
   uploadCalibrationFile,
 } from "@/lib/midend";
+import { ExecutionActivity } from "@/components/execution";
 
 interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+  executionId?: string;
+  executionStatus?: ExecutionStatus;
   evidence?: ExecutionStatus["tool_calls"];
   errors?: string[];
+  isRunning?: boolean;
 }
 
 export default function MidendConsole() {
@@ -41,6 +45,7 @@ export default function MidendConsole() {
   const [calibError, setCalibError] = useState<string | null>(null);
   const [calibDataset, setCalibDataset] = useState<CalibrationDataset | null>(null);
   const [calibRunning, setCalibRunning] = useState(false);
+  const [calibExecutionId, setCalibExecutionId] = useState<string | null>(null);
   const [calibResult, setCalibResult] = useState<ExecutionStatus | null>(null);
 
   useEffect(() => {
@@ -79,27 +84,65 @@ export default function MidendConsole() {
     if (!conversationId || !input.trim() || sending) return;
     const message = input.trim();
     setInput("");
-    setTurns((t) => [...t, { role: "user", content: message }]);
     setSending(true);
+
+    const userTurn: ChatTurn = { role: "user", content: message };
+    setTurns((t) => [...t, userTurn]);
+
     const started = await sendChatMessage(message, conversationId);
     if (!started.ok) {
-      setTurns((t) => [...t, { role: "assistant", content: `(request failed: ${started.error})` }]);
+      setTurns((t) => [
+        ...t,
+        { role: "assistant", content: `(request failed: ${started.error})` },
+      ]);
       setSending(false);
       return;
     }
-    const result = await pollExecution(started.data.execution_id);
+
+    const execId = started.data.execution_id;
+    // Add placeholder assistant turn with live execution tracker
+    setTurns((t) => [
+      ...t,
+      {
+        role: "assistant",
+        content: "",
+        executionId: execId,
+        isRunning: true,
+      },
+    ]);
+
+    const result = await pollExecution(execId);
     if (!result.ok) {
-      setTurns((t) => [...t, { role: "assistant", content: `(${result.error})` }]);
+      setTurns((prev) => {
+        const next = [...prev];
+        const lastIdx = next.length - 1;
+        if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
+          next[lastIdx] = {
+            role: "assistant",
+            content: `(${result.error})`,
+            executionId: execId,
+            isRunning: false,
+          };
+        }
+        return next;
+      });
     } else {
-      setTurns((t) => [
-        ...t,
-        {
-          role: "assistant",
-          content: result.data.assistant_output ?? "(no output)",
-          evidence: result.data.tool_calls,
-          errors: result.data.errors,
-        },
-      ]);
+      setTurns((prev) => {
+        const next = [...prev];
+        const lastIdx = next.length - 1;
+        if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
+          next[lastIdx] = {
+            role: "assistant",
+            content: result.data.assistant_output ?? "(no output)",
+            executionId: execId,
+            executionStatus: result.data,
+            evidence: result.data.tool_calls,
+            errors: result.data.errors,
+            isRunning: false,
+          };
+        }
+        return next;
+      });
     }
     setSending(false);
   }
@@ -109,6 +152,7 @@ export default function MidendConsole() {
     setCalibError(null);
     setCalibDataset(null);
     setCalibResult(null);
+    setCalibExecutionId(null);
     const result = await uploadCalibrationFile(file);
     setCalibUploading(false);
     if (!result.ok) {
@@ -122,13 +166,21 @@ export default function MidendConsole() {
     if (!calibDataset || calibRunning) return;
     setCalibRunning(true);
     setCalibResult(null);
-    const started = await runSkill("model_calibration", { calibration_input: calibDataset.input_id });
+    setCalibError(null);
+
+    const started = await runSkill("model_calibration", {
+      calibration_input: calibDataset.input_id,
+    });
     if (!started.ok) {
       setCalibError(started.error);
       setCalibRunning(false);
       return;
     }
-    const result = await pollExecution(started.data.execution_id);
+
+    const execId = started.data.execution_id;
+    setCalibExecutionId(execId);
+
+    const result = await pollExecution(execId);
     setCalibRunning(false);
     if (!result.ok) {
       setCalibError(result.error);
@@ -212,7 +264,7 @@ export default function MidendConsole() {
               </label>
               {calibError && <p className="text-sm text-risk-high">{calibError}</p>}
               {calibDataset && (
-                <div className="veyra-readout rounded-sm border border-engine/30 bg-engine/5 p-3 space-y-1">
+                <div className="veyra-readout rounded-sm border border-engine/30 bg-engine/5 p-3 space-y-2">
                   <span className="rounded-full border border-engine/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-engine">
                     Engine — dataset validated
                   </span>
@@ -228,27 +280,18 @@ export default function MidendConsole() {
                   >
                     {calibRunning ? "Fitting…" : "Run calibration"}
                   </button>
-                </div>
-              )}
-              {calibResult && (
-                <div className="space-y-1">
-                  <p className="text-sm text-foreground/90 whitespace-pre-line">
-                    {calibResult.assistant_output ?? "(no output)"}
-                  </p>
-                  {calibResult.tool_calls.length > 0 && (
-                    <div className="veyra-readout rounded-sm border border-engine/30 bg-engine/5 p-3 space-y-1">
-                      <span className="rounded-full border border-engine/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-engine">
-                        Engine — tool calls
-                      </span>
-                      {calibResult.tool_calls.map((tc, j) => (
-                        <p key={j} className="font-mono text-[11px] text-muted">
-                          {tc.tool} — {tc.success ? "ok" : "failed"}
-                        </p>
-                      ))}
+
+                  {/* Live Execution Activity Panel for Calibration */}
+                  {calibExecutionId && (
+                    <div className="pt-2">
+                      <ExecutionActivity
+                        executionId={calibExecutionId}
+                        initialData={calibResult}
+                        live={calibRunning}
+                        title="Calibration execution activity"
+                        defaultCollapsed={false}
+                      />
                     </div>
-                  )}
-                  {calibResult.errors.length > 0 && (
-                    <p className="text-xs text-risk-high">{calibResult.errors.join("; ")}</p>
                   )}
                 </div>
               )}
@@ -267,20 +310,29 @@ export default function MidendConsole() {
                       {t.role === "user" ? "You" : "AI"}
                     </span>
                   </div>
-                  <p className="text-sm text-foreground/90 whitespace-pre-line">{t.content}</p>
-                  {t.evidence && t.evidence.length > 0 && (
-                    <div className="veyra-readout rounded-sm border border-engine/30 bg-engine/5 p-3 space-y-1">
-                      <span className="rounded-full border border-engine/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-engine">
-                        Engine — tool calls
-                      </span>
-                      {t.evidence.map((tc, j) => (
-                        <p key={j} className="font-mono text-[11px] text-muted">
-                          {tc.tool} — {tc.success ? "ok" : "failed"}
-                        </p>
-                      ))}
-                    </div>
+
+                  {/* Assistant response text or loading status */}
+                  {t.content ? (
+                    <p className="text-sm text-foreground/90 whitespace-pre-line">{t.content}</p>
+                  ) : t.isRunning ? (
+                    <p className="text-sm text-ai font-mono animate-pulse">
+                      AI is orchestrating tool calls...
+                    </p>
+                  ) : null}
+
+                  {/* Expandable Live Execution Activity Panel */}
+                  {t.executionId && (
+                    <ExecutionActivity
+                      executionId={t.executionId}
+                      initialData={t.executionStatus}
+                      live={t.isRunning}
+                      defaultCollapsed={!t.isRunning}
+                    />
                   )}
-                  {t.errors && t.errors.length > 0 && <p className="text-xs text-risk-high">{t.errors.join("; ")}</p>}
+
+                  {t.errors && t.errors.length > 0 && (
+                    <p className="text-xs text-risk-high">{t.errors.join("; ")}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -307,3 +359,4 @@ export default function MidendConsole() {
     </div>
   );
 }
+

@@ -69,7 +69,9 @@ export default function PipelineDemo() {
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setAutoplay(!mq.matches);
+    const handler = (e: MediaQueryListEvent) => setAutoplay(!e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
   }, []);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);

@@ -18,9 +18,11 @@ def api_client():
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
-def test_startup_without_key_and_safe_status(api_client):
+def test_startup_without_key_and_safe_status(api_client, monkeypatch, tmp_path):
     async def run():
+        monkeypatch.delenv("MIDEND_AI_API_KEY", raising=False)
         from veyra.midend.config.ai_provider import get_ai_config_manager
+        monkeypatch.setattr(get_ai_config_manager(), "env_file", tmp_path / "empty.env")
         get_ai_config_manager().clear_runtime()
         async with api_client as client:
             response = await client.get("/ai/config")

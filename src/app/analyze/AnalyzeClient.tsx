@@ -147,18 +147,14 @@ export default function AnalyzeClient() {
   }, []);
 
   useEffect(() => {
-    if (!selected || !backendOnline) {
-      setOnTarget(null);
-      return;
-    }
+    if (!selected || !backendOnline) return;
     const context = buildOnTargetContext(sequence, selected);
-    if (!context) {
-      setOnTarget({ ok: false, error: "Not enough flanking sequence for backend scoring (candidate too close to an input edge)." });
-      return;
-    }
+    if (!context) return;
     let cancelled = false;
-    setOnTargetLoading(true);
-    scoreOnTarget(context).then((r) => {
+    Promise.resolve().then(() => {
+      if (!cancelled) setOnTargetLoading(true);
+      return scoreOnTarget(context);
+    }).then((r) => {
       if (!cancelled) {
         setOnTarget(r);
         setOnTargetLoading(false);
@@ -170,23 +166,19 @@ export default function AnalyzeClient() {
   }, [selected, backendOnline, sequence]);
 
   useEffect(() => {
-    if (!selected || !backendOnline) {
-      setOffTargetCfd(null);
-      return;
-    }
+    if (!selected || !backendOnline) return;
     const scorable = selected.offTargets
       .filter((h): h is typeof h & { pam: string } => h.pam !== null)
       .slice(0, CFD_OFFTARGET_CAP);
-    if (scorable.length === 0) {
-      setOffTargetCfd({ ok: true, data: { scored: [], meanCfd: null, maxCfd: null } });
-      return;
-    }
+    if (scorable.length === 0) return;
     let cancelled = false;
-    setOffTargetCfdLoading(true);
-    scoreOffTargetsCFD(
-      selected.sequence,
-      scorable.map((h) => ({ protospacer: h.sequence, pam: h.pam }))
-    ).then((r) => {
+    Promise.resolve().then(() => {
+      if (!cancelled) setOffTargetCfdLoading(true);
+      return scoreOffTargetsCFD(
+        selected.sequence,
+        scorable.map((h) => ({ protospacer: h.sequence, pam: h.pam }))
+      );
+    }).then((r) => {
       if (!cancelled) {
         setOffTargetCfd(r);
         setOffTargetCfdLoading(false);
@@ -198,11 +190,7 @@ export default function AnalyzeClient() {
   }, [selected, backendOnline]);
 
   useEffect(() => {
-    if (!selected || !backendOnline) {
-      setTm(null);
-      setHomopolymer(null);
-      return;
-    }
+    if (!selected || !backendOnline) return;
     let cancelled = false;
     computeMeltingTemp(selected.sequence).then((r) => {
       if (!cancelled) setTm(r);

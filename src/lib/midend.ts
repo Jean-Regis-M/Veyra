@@ -168,20 +168,160 @@ export async function runSkill(
   return call("POST", `/skills/${skillId}`, payload);
 }
 
+export interface ToolCallRecord {
+  call_id?: string;
+  execution_id?: string;
+  tool: string;
+  connector?: "http" | "mcp" | string;
+  arguments?: Record<string, unknown>;
+  status?: "queued" | "running" | "completed" | "failed";
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number;
+  success?: boolean;
+  result?: {
+    tool?: string;
+    rows?: unknown[];
+    summary?: Record<string, unknown>;
+    errors?: string[];
+    warnings?: string[];
+    metadata?: Record<string, unknown>;
+    [key: string]: unknown;
+  } | Record<string, unknown>;
+  errors?: string[];
+  warnings?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface ParallelGroupRecord {
+  group_id?: string;
+  duration_ms?: number;
+  calls: ToolCallRecord[];
+}
+
+export interface AIRequestRecord {
+  request_id: string;
+  provider: string;
+  model: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number;
+  status: "queued" | "running" | "completed" | "failed";
+  usage?: Record<string, unknown>;
+  finish_reason?: string | null;
+  error?: string | null;
+}
+
 export interface ExecutionStatus {
   execution_id: string;
   status: "queued" | "running" | "completed" | "failed";
+  started_at?: string | null;
+  finished_at?: string | null;
+  elapsed_ms?: number;
+  active_tool_calls?: number;
+  completed_tool_calls?: number;
+  failed_tool_calls?: number;
+  active_ai_requests?: number;
+  completed_ai_requests?: number;
+  reasoning_active?: boolean;
+  generation_active?: boolean;
+  connector?: string;
+  provider?: string | null;
+  model?: string | null;
+  validated_inputs?: unknown[];
+  analysis_input?: unknown | null;
+  calibration_input?: unknown | null;
+  calibration_status?: string;
   assistant_output: string | null;
   deterministic_evidence: unknown;
-  tool_calls: { tool: string; success: boolean; result: unknown }[];
+  skill_result?: Record<string, unknown> | null;
+  tool_calls: ToolCallRecord[];
+  ai_requests?: AIRequestRecord[];
+  parallel_groups?: ParallelGroupRecord[];
   errors: string[];
   warnings: string[];
-  reasoning_active: boolean;
-  generation_active: boolean;
 }
 
 export async function getExecution(executionId: string): Promise<MidendResult<ExecutionStatus>> {
   return call("GET", `/executions/${executionId}`);
+}
+
+export interface ExecutionStreamEvent {
+  event_id?: string;
+  event: string;
+  execution_id: string;
+  timestamp?: string;
+  [key: string]: unknown;
+}
+
+/** Subscribe to live Server-Sent Events from MIDEND for an execution. */
+export function subscribeExecutionEvents(
+  executionId: string,
+  onEvent: (event: ExecutionStreamEvent) => void,
+  onDone?: () => void
+): () => void {
+  if (typeof window === "undefined" || !executionId) {
+    return () => {};
+  }
+  const url = `${MIDEND_URL}/executions/${executionId}/stream`;
+  let eventSource: EventSource | null = null;
+  try {
+    eventSource = new EventSource(url);
+  } catch {
+    onDone?.();
+    return () => {};
+  }
+
+  const eventTypes = [
+    "execution_started",
+    "tool_call_started",
+    "tool_call_completed",
+    "tool_call_failed",
+    "parallel_group_started",
+    "parallel_group_completed",
+    "skill_started",
+    "candidate_discovered",
+    "candidate_evaluated",
+    "ranking_completed",
+    "skill_completed",
+    "skill_failed",
+    "calibration_data_mapped",
+    "calibration_completed",
+    "ai_request_started",
+    "ai_generation_started",
+    "ai_generation_completed",
+    "ai_generation_failed",
+    "ai_stream_chunk",
+    "execution_completed",
+    "execution_failed",
+    "execution_finished",
+  ];
+
+  for (const type of eventTypes) {
+    eventSource.addEventListener(type, (e: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(e.data);
+        onEvent({ ...parsed, event: type });
+        if (type === "execution_finished" || type === "execution_completed" || type === "execution_failed") {
+          setTimeout(() => {
+            eventSource?.close();
+            onDone?.();
+          }, 150);
+        }
+      } catch {
+        // ignore parse error
+      }
+    });
+  }
+
+  eventSource.onerror = () => {
+    eventSource?.close();
+    onDone?.();
+  };
+
+  return () => {
+    eventSource?.close();
+  };
 }
 
 /** Polls an execution until it leaves queued/running, or the attempt cap is hit. */
