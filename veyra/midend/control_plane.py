@@ -200,8 +200,8 @@ class ProviderRegistry:
                 "reasoning_active": self.reasoning_active, "current_execution_id": self.current_execution_id,
                 "current_request_id": self.current_request_id}
 
-    def add(self, *, provider_id: str, provider_type: str, base_url: str, api_key: str,
-            models: list[str] | None, default_model: str, persist: bool = False) -> ProviderRecord:
+    def add(self, *, provider_id: str, provider_type: str, base_url: str, api_key: str = "",
+            models: list[str] | None = None, default_model: str, persist: bool = False) -> ProviderRecord:
         if persist:
             raise AIConfigError("plaintext provider-key persistence is disabled")
         if provider_type != "openai_compatible":
@@ -211,8 +211,9 @@ class ProviderRegistry:
         model_list = [m.strip() for m in (models or [default_model]) if m and m.strip()]
         if not model_list or not default_model.strip() or default_model not in model_list:
             raise AIConfigError("default_model must be included in models")
-        validate_config(base_url, api_key, default_model)
-        config = AIProviderConfig(base_url.strip(), api_key.strip(), default_model.strip(), source="runtime",
+        api_key_val = api_key.strip() if api_key else None
+        validate_config(base_url, api_key_val, default_model)
+        config = AIProviderConfig(base_url.strip(), api_key_val, default_model.strip(), source="runtime",
                                   provider=provider_type)
         register_secret(config.api_key)
         record = ProviderRecord(provider_id, provider_id, provider_type, config, model_list, default_model)

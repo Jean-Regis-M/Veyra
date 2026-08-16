@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover - compatibility for the existing source 
 
 class AIConfigRequest(BaseModel):
     base_url: str = Field(..., min_length=1)
-    api_key: str = Field(..., min_length=1)
+    api_key: str = ""
     model: str = Field(..., min_length=1)
     persist: bool = False
 
@@ -44,7 +44,7 @@ class AIProviderRequest(BaseModel):
     provider_id: str = Field(..., min_length=1)
     type: str = "openai_compatible"
     base_url: str = Field(..., min_length=1)
-    api_key: str = Field(..., min_length=1)
+    api_key: str = ""
     models: list[str] = Field(default_factory=list)
     default_model: str = Field(..., min_length=1)
     persist: bool = False

@@ -8,7 +8,7 @@
  * UI must show as "unavailable," never a fallback number of our own.
  */
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_VEYRA_BACKEND_URL ?? "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_VEYRA_BACKEND_URL ?? "http://8.231.81.99:8000";
 export const BACKEND_BASE_URL = BACKEND_URL;
 
 export interface OnTargetFallbackStep {

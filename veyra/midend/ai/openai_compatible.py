@@ -19,8 +19,24 @@ class OpenAICompatibleProvider:
         self.config = config or get_ai_config()
 
     def _require_key(self) -> None:
-        if not self.config.api_key:
-            raise AIProviderNotConfiguredError()
+        pass
+
+    def _get_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key and self.config.api_key.strip():
+            headers["Authorization"] = f"Bearer {self.config.api_key.strip()}"
+        else:
+            try:
+                import google.auth
+                import google.auth.transport.requests
+                creds, _ = google.auth.default()
+                req = google.auth.transport.requests.Request()
+                creds.refresh(req)
+                if creds.token:
+                    headers["Authorization"] = f"Bearer {creds.token}"
+            except Exception:
+                pass
+        return headers
 
     async def generate(self, messages: list[AIMessage], model: Optional[str] = None,
                        temperature: float = 0.0, max_tokens: Optional[int] = None,
@@ -53,7 +69,7 @@ class OpenAICompatibleProvider:
                 response = await client.post(
                     f"{self.config.base_url.rstrip('/')}/chat/completions",
                     json=payload,
-                    headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+                    headers=self._get_headers(),
                 )
             if response.status_code in {401, 403}:
                 raise AIAuthenticationError("AI provider authentication failed")

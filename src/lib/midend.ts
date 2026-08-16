@@ -8,7 +8,7 @@
  * real response or a typed failure.
  */
 
-const MIDEND_URL = process.env.NEXT_PUBLIC_VEYRA_MIDEND_URL ?? "http://localhost:8080";
+const MIDEND_URL = process.env.NEXT_PUBLIC_VEYRA_MIDEND_URL ?? "http://8.231.81.99:8080";
 
 export type MidendResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
