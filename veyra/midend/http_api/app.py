@@ -124,10 +124,13 @@ class SkillExecutionBody(BaseModel):
 
 app = FastAPI(title="VEYRA MIDEND", version="0.1.0")
 
-# Frontend (Next.js dev server) calls this API directly from the browser.
+# Frontend (Next.js dev server and the deployed Vercel app) calls this API
+# directly from the browser. allow_origin_regex covers Vercel's per-deploy
+# preview URLs (veyra-<hash>-stealthwhiz.vercel.app), not just production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://veyra-genomic-intelligence.vercel.app"],
+    allow_origin_regex=r"https://veyra-.*-stealthwhiz\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
